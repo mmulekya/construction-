@@ -1,0 +1,28 @@
+<?php
+session_start();
+include "config.php";
+
+if($_POST){
+    $user = $_POST['username'];
+    $pass = md5($_POST['password']);
+
+    $stmt = $conn->prepare("SELECT * FROM users WHERE username=? AND password=?");
+    $stmt->bind_param("ss",$user,$pass);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    if($res->num_rows > 0){
+        $_SESSION['mars'] = $user;
+        header("Location: index.php");
+    } else {
+        echo "Wrong login!";
+    }
+}
+?>
+
+<form method="POST">
+<h2>Mars GPT Login</h2>
+<input name="username" placeholder="Username">
+<input name="password" type="password" placeholder="Password">
+<button>Login</button>
+</form>
