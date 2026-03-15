@@ -1,0 +1,41 @@
+<?php
+session_start();
+if(!isset($_SESSION['mars'])){
+    exit("Not logged in!");
+}
+
+include "config.php";
+
+$question = $_POST['message'];
+$user = $_SESSION['mars'];
+
+// Optional: Save chat history
+$stmt = $conn->prepare("INSERT INTO chat_history(user, message) VALUES (?,?)");
+$stmt->bind_param("ss",$user,$question);
+$stmt->execute();
+
+// GPT API integration
+$prompt = "You are Mars GPT, a professional civil engineering and construction AI. Answer clearly with examples, formulas, and best practices. Question: ".$question;
+
+$data = [
+    "model" => "gpt-4o-mini",
+    "messages" => [
+        ["role"=>"system","content"=>"You are a construction expert."],
+        ["role"=>"user","content"=>$question]
+    ]
+];
+
+$ch = curl_init("https://api.openai.com/v1/chat/completions");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "Content-Type: application/json",
+    "Authorization: Bearer YOUR_OPENAI_API_KEY"
+]);
+
+$response = curl_exec($ch);
+$result = json_decode($response, true);
+
+// Extract GPT answer
+echo $result['choices'][0]['message']['content'];
+?>
