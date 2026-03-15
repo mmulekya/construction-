@@ -1,1 +1,42 @@
 
+<?php
+session_start();
+if(!isset($_SESSION['mars'])){
+    header("Location: login.php");
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html>
+<head>
+<title>Mars GPT - Construction AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>🚀 Mars GPT - Construction Expert</h1>
+
+<div id="chat"></div>
+
+<input id="msg" placeholder="Ask Mars about construction...">
+<button onclick="send()">Send</button>
+
+<script>
+async function send(){
+    let msg = document.getElementById("msg").value;
+
+    let res = await fetch("mars_gpt.php",{
+        method:"POST",
+        headers:{"Content-Type":"application/x-www-form-urlencoded"},
+        body:"message="+encodeURIComponent(msg)
+    });
+
+    let reply = await res.text();
+    let chatDiv = document.getElementById("chat");
+    chatDiv.innerHTML += "<p><b>You:</b> "+msg+"</p>";
+    chatDiv.innerHTML += "<p><b>Mars:</b> "+reply+"</p>";
+    document.getElementById("msg").value = "";
+}
+</script>
+</body>
+</html>
