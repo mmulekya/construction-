@@ -1,3 +1,11 @@
+<?php
+
+require_once "includes/database.php";
+require_once "includes/auth.php";
+require_once "includes/security.php";
+
+?>
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -6,7 +14,7 @@
 
 <body>
 
-<h2>BuildSmart AI Assistant</h2>
+<h2>BuildSmart Construction AI</h2>
 
 <input type="text" id="question" placeholder="Ask construction question">
 
@@ -18,14 +26,14 @@
 
 function askAI(){
 
-let q = document.getElementById("question").value;
+let question = document.getElementById("question").value;
 
 fetch("api/ask_ai.php",{
 method:"POST",
 headers:{
 "Content-Type":"application/x-www-form-urlencoded"
 },
-body:"question="+q
+body:"question="+encodeURIComponent(question)
 })
 .then(res=>res.json())
 .then(data=>{
