@@ -1,0 +1,18 @@
+import axios from 'axios';
+import {API_URL} from '@env';
+
+const api = axios.create({
+  baseURL: API_URL,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Attach session token automatically
+api.interceptors.request.use(config => {
+  // Add auth token here if using JWT or session
+  return config;
+});
+
+export default api;
