@@ -1,6 +1,8 @@
 <?php
 require_once "../includes/config.php";
 if(!isset($_SESSION['admin_id'])) exit("Unauthorized");
+if(!has_permission($conn, $_SESSION['user_id'], 'upload_pdf')) 
+    exit("You are not allowed to upload PDFs");
 
 if($_SERVER['REQUEST_METHOD'] === 'POST'){
     if(!verify_csrf($_POST['token'])) exit("Invalid CSRF");
