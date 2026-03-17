@@ -3,12 +3,13 @@
 require_once "../includes/database.php";
 require_once "../includes/security.php";
 require_once "../includes/config.php";
+require_once "../includes/knowledge.php";
 
 if(!isset($_SESSION['user_id'])){
 exit("Unauthorized");
 }
 
-if(!verify_token($_POST['token'])){
+if(!verify_csrf($_POST['token'])){
 exit("Invalid token");
 }
 
@@ -29,52 +30,61 @@ WHERE user_id=? AND created_at > NOW() - INTERVAL 1 MINUTE"
 
 $stmt->bind_param("i",$user_id);
 $stmt->execute();
-$result = $stmt->get_result()->fetch_assoc();
+$data = $stmt->get_result()->fetch_assoc();
 
-if($result['total'] > 10){
+if($data['total'] > RATE_LIMIT){
 exit("Too many requests");
 }
 
-/* SYSTEM PROMPT (Construction AI) */
-$system_prompt = "You are BuildSmart AI, a professional construction and engineering assistant. Provide accurate and practical answers.";
+/* 🧠 GET KNOWLEDGE */
+$knowledge = get_knowledge($conn, $question);
 
-/* Prepare API request */
-$data = [
+/* SYSTEM PROMPT */
+$system_prompt = "You are BuildSmart AI, a professional construction and engineering assistant.";
+
+/* COMBINE QUESTION + KNOWLEDGE */
+$user_prompt = $question;
+
+if(!empty($knowledge)){
+$user_prompt .= "\n\nUse this engineering knowledge:\n".$knowledge;
+}
+
+/* AI REQUEST */
+$payload = [
 "model" => "gpt-4o-mini",
 "messages" => [
 ["role"=>"system","content"=>$system_prompt],
-["role"=>"user","content"=>$question]
+["role"=>"user","content"=>$user_prompt]
 ],
-"temperature" => 0.5
+"temperature" => 0.4
 ];
 
-/* cURL request */
 $ch = curl_init("https://api.openai.com/v1/chat/completions");
 
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
+curl_setopt_array($ch, [
+CURLOPT_RETURNTRANSFER => true,
+CURLOPT_POST => true,
+CURLOPT_HTTPHEADER => [
 "Content-Type: application/json",
-"Authorization: Bearer " . OPENAI_API_KEY
+"Authorization: Bearer ".OPENAI_API_KEY
+],
+CURLOPT_POSTFIELDS => json_encode($payload)
 ]);
-
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
 
 $response = curl_exec($ch);
 
 if(curl_errno($ch)){
-error_log("AI API Error: ".curl_error($ch));
+error_log("AI ERROR: ".curl_error($ch));
 exit("AI error");
 }
 
 curl_close($ch);
 
-$result = json_decode($response, true);
+$result = json_decode($response,true);
 
 $ai_reply = $result['choices'][0]['message']['content'] ?? "No response";
 
-/* Save to DB */
+/* SAVE */
 $stmt = $conn->prepare(
 "INSERT INTO messages (user_id,question,answer,ip_address)
 VALUES (?,?,?,?)"
@@ -83,14 +93,13 @@ VALUES (?,?,?,?)"
 $stmt->bind_param("isss",$user_id,$question,$ai_reply,$ip);
 $stmt->execute();
 
-/* Log */
+/* LOG */
 error_log(
 $user_id." | ".$question."\n",
 3,
 "../logs/ai_queries.log"
 );
 
-/* Return response */
 echo json_encode([
 "reply"=>$ai_reply
 ]);
