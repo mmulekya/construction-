@@ -12,6 +12,7 @@ $title = trim($_POST['title'] ?? 'User Submission');
 if(strlen($text)==0) exit(json_response(["error"=>"Empty submission"]));
 
 $embedding = generate_embedding($text);
+notify_admin($conn,"New User Knowledge","User ID {$_SESSION['user_id']} submitted knowledge titled '{$title}'");
 
 $stmt = $conn->prepare("INSERT INTO knowledge_base (title, content, embedding, source_type) VALUES (?,?,?,?)");
 $stmt->bind_param("ssss", $title, $text, $embedding, $source_type='user');
