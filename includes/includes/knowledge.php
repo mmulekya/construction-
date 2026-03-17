@@ -1,29 +1,56 @@
 <?php
 
+function cosine_similarity($a, $b){
+
+$a = json_decode($a, true);
+$b = json_decode($b, true);
+
+$dot = 0;
+$normA = 0;
+$normB = 0;
+
+for($i=0; $i<count($a); $i++){
+$dot += $a[$i] * $b[$i];
+$normA += $a[$i] * $a[$i];
+$normB += $b[$i] * $b[$i];
+}
+
+return $dot / (sqrt($normA) * sqrt($normB));
+}
+
 function get_knowledge($conn, $question){
 
-$keywords = explode(" ", $question);
+require_once "embedding.php";
 
-$results = [];
+$q_embedding = generate_embedding($question);
 
-foreach($keywords as $word){
+$result = $conn->query("SELECT content, embedding FROM knowledge_base");
 
-$stmt = $conn->prepare(
-"SELECT content FROM knowledge_base
-WHERE content LIKE CONCAT('%', ?, '%')
-LIMIT 2"
-);
+$best_matches = [];
 
-$stmt->bind_param("s",$word);
-$stmt->execute();
+while($row = $result->fetch_assoc()){
 
-$res = $stmt->get_result();
+if(empty($row['embedding'])) continue;
 
-while($row = $res->fetch_assoc()){
-$results[] = $row['content'];
+$score = cosine_similarity($q_embedding, $row['embedding']);
+
+$best_matches[] = [
+"content"=>$row['content'],
+"score"=>$score
+];
 }
 
+usort($best_matches, function($a,$b){
+return $b['score'] <=> $a['score'];
+});
+
+$top = array_slice($best_matches, 0, 3);
+
+$text = "";
+
+foreach($top as $item){
+$text .= $item['content']."\n\n";
 }
 
-return implode("\n", array_unique($results));
+return $text;
 }
