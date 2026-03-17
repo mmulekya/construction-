@@ -1,11 +1,13 @@
-<?php
-function log_action($conn,$action_type,$action_details="",$user_id=null,$admin_id=null){
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $stmt = $conn->prepare(
-        "INSERT INTO logs (user_id, admin_id, action_type, action_details, ip_address, user_agent) 
-         VALUES (?,?,?,?,?,?)"
-    );
-    $stmt->bind_param("iissss",$user_id,$admin_id,$action_type,$action_details,$ip,$ua);
+function has_permission($conn, $user_id, $permission_name){
+    $stmt = $conn->prepare("
+        SELECT 1 
+        FROM user_roles ur
+        JOIN role_permissions rp ON ur.role_id = rp.role_id
+        JOIN permissions p ON rp.permission_id = p.id
+        WHERE ur.user_id = ? AND p.permission_name = ? LIMIT 1
+    ");
+    $stmt->bind_param("is", $user_id, $permission_name);
     $stmt->execute();
+    $res = $stmt->get_result();
+    return $res->num_rows > 0;
 }
