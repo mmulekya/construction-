@@ -2,6 +2,8 @@
 
 require_once "../includes/database.php";
 require_once "../includes/security.php";
+if(!has_permission($conn, $_SESSION['user_id'], 'ask_ai')) 
+    exit(json_response(["error"=>"Permission denied"]));
 require_once "../includes/config.php";
 require_once "../includes/knowledge.php";
 
