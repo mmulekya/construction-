@@ -35,6 +35,7 @@ foreach($chunks as $chunk){
     $stmt->bind_param("ssss", $pdf_file['name'], $chunk, $embedding, $source_type='pdf');
     $stmt->execute();
 }
+notify_admin($conn,"New PDF Added","PDF '{$pdf_file['name']}' processed and added to AI knowledge base by user ID: ".$_SESSION['user_id']);
 
 // Log the upload
 log_action($conn,"PDF_Uploaded","PDF processed and added to knowledge base: ".$pdf_file['name'], $_SESSION['user_id']);
