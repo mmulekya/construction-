@@ -17,6 +17,11 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
         if(password_verify($password, $admin['password_hash'])){
             session_regenerate_id(true);
             $_SESSION['admin_id'] = $admin['id'];
+$login_success = false; // after verifying password
+
+if(!$login_success){
+    trigger_alert($conn,"Failed_Login","Username: $username, possible brute-force");
+}
             header("Location: dashboard.php");
             exit;
         }
