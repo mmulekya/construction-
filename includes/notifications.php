@@ -1,27 +1,14 @@
 <?php
-require_once "database.php";
+function send_notification($conn,$user_id,$message){
+    $stmt = $conn->prepare("INSERT INTO notifications (user_id,message) VALUES (?,?)");
+    $stmt->bind_param("is",$user_id,$message);
+    $stmt->execute();
+}
 
-function notify_admin($conn, $notification_type, $notification_details){
-    // Get all admins
-    $stmt = $conn->prepare("
-        SELECT u.id AS admin_id 
-        FROM users u 
-        JOIN user_roles ur ON u.id = ur.user_id
-        JOIN roles r ON ur.role_id = r.id
-        WHERE r.role_name='admin'
-    ");
+function get_notifications($conn,$user_id){
+    $stmt = $conn->prepare("SELECT id,message,created_at,is_read FROM notifications WHERE user_id=? ORDER BY created_at DESC");
+    $stmt->bind_param("i",$user_id);
     $stmt->execute();
     $res = $stmt->get_result();
-
-    while($admin = $res->fetch_assoc()){
-        $stmt2 = $conn->prepare("
-            INSERT INTO notifications (admin_id, notification_type, notification_details) 
-            VALUES (?,?,?)
-        ");
-        $stmt2->bind_param("sss",$admin['admin_id'],$notification_type,$notification_details);
-        $stmt2->execute();
-
-        // Optional: send email
-        // mail($admin_email, "BuildSmart Notification: $notification_type", $notification_details);
-    }
+    return $res->fetch_all(MYSQLI_ASSOC);
 }
