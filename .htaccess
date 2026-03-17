@@ -1,0 +1,9 @@
+<Files ".env">
+    Order allow,deny
+    Deny from all
+</Files>
+
+<Files "php_errors.log">
+    Order allow,deny
+    Deny from all
+</Files>
