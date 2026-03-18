@@ -13,6 +13,15 @@ function quickAsk(q){
   document.getElementById("question").value = q;
   sendQuestion();
 }
+async function loadHistory(){
+  const res = await fetch("api/history.php");
+  const data = await res.json();
+
+  data.reverse().forEach(chat => {
+    addMessage("You: " + chat.question, "user");
+    addMessage("BuildSmart AI: " + chat.answer, "ai");
+  });
+}
 
 async function sendQuestion() {
   const input = document.getElementById("question");
