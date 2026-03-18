@@ -1,4 +1,4 @@
-const API_URL = "https://yourdomain.com/api/ask_ai.php";
+const API_URL = "api/ask_ai.php";
 
 function addMessage(text, type) {
   const chatBox = document.getElementById("chat-box");
