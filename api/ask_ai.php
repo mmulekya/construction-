@@ -1,4 +1,3 @@
-
 <?php
 require_once "../includes/config.php";
 require_once "../includes/database.php";
@@ -7,28 +6,31 @@ require_once "../includes/security.php";
 
 header("Content-Type: application/json");
 
-// Get input safely
+// Read JSON input
 $data = json_decode(file_get_contents("php://input"), true);
+
 $question = sanitize($data['question'] ?? '');
 
 if(empty($question)){
-    echo json_encode(["error"=>"Empty question"]);
+    echo json_encode(["error"=>"Question cannot be empty"]);
     exit;
 }
 
-// 1️⃣ Try local knowledge base FIRST (FAST & SAFE)
+// Get answer from knowledge base
 $answer = get_knowledge($conn, $question);
 
-if($answer !== "Sorry, no matching knowledge found."){
+if($answer){
     echo json_encode([
-        "source"=>"knowledge_base",
-        "answer"=>$answer
+        "status" => "success",
+        "source" => "knowledge_base",
+        "answer" => $answer
     ]);
     exit;
 }
 
-// 2️⃣ Fallback response (since OpenAI may fail)
+// Fallback response
 echo json_encode([
-    "source"=>"fallback",
-    "answer"=>"Sorry, advanced AI is temporarily unavailable. Please try another construction-related question or check your internet/server configuration."
+    "status" => "success",
+    "source" => "fallback",
+    "answer" => "I couldn't find an exact answer.\n\nTry asking about:\n- Concrete mix ratio\n- Foundation types\n- Structural materials\n- Construction methods"
 ]);
