@@ -1,3 +1,7 @@
+<?php
+session_start();
+require_once "includes/security.php";
+$csrf = generate_csrf();
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,3 +25,4 @@
 <script src="chat.js"></script>
 </body>
 </html>
+?>
