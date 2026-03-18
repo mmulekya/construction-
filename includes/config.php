@@ -1,10 +1,14 @@
 <?php
-$DB_HOST = "sqlXXX.infinityfree.com";
-$DB_USER = "your_db_user";
-$DB_PASS = "your_db_password";
-$DB_NAME = "your_db_name";
+// Database & general config
+define("DB_HOST", "localhost");
+define("DB_USER", "your_db_user");
+define("DB_PASS", "your_db_pass");
+define("DB_NAME", "your_db_name");
 
-$conn = new mysqli($DB_HOST,$DB_USER,$DB_PASS,$DB_NAME);
-if($conn->connect_error) die("DB Error");
-
-session_start();
+// Load environment variables (OpenAI key)
+if(file_exists(__DIR__ . '/../.env')){
+    $env = parse_ini_file(__DIR__ . '/../.env');
+    define("OPENAI_API_KEY", $env['OPENAI_API_KEY']);
+} else {
+    define("OPENAI_API_KEY", "");
+}
