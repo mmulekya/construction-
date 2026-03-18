@@ -4,44 +4,34 @@ require_once "../includes/database.php";
 require_once "../includes/security.php";
 require_once "../includes/knowledge.php";
 require_once "../includes/history.php";
+require_once "../includes/gpt_ai.php";
 
 session_start();
 require_login();
 
 header("Content-Type: application/json");
 
-// Get user
 $user_id = $_SESSION['user_id'];
-
-// Read input
 $data = json_decode(file_get_contents("php://input"), true);
 $question = sanitize($data['question'] ?? '');
 
 if(empty($question)){
-    echo json_encode(["error"=>"Question is required"]);
+    echo json_encode(["error"=>"Question required"]);
     exit;
 }
 
-// Get AI answer
+// Search internal knowledge first
 $answer = get_knowledge($conn, $question);
 
-// If found
+// If found in knowledge/PDFs
 if($answer){
     save_chat($conn, $user_id, $question, $answer);
-
-    echo json_encode([
-        "status" => "success",
-        "answer" => $answer
-    ]);
+    echo json_encode(["status"=>"success","answer"=>$answer,"source"=>"internal"]);
     exit;
 }
 
-// Fallback
-$fallback = "I couldn't find an exact answer. Try asking about construction topics like concrete, foundation, or materials.";
+// Otherwise call GPT
+$gptAnswer = call_gpt($question);
+save_chat($conn, $user_id, $question, $gptAnswer);
 
-save_chat($conn, $user_id, $question, $fallback);
-
-echo json_encode([
-    "status" => "success",
-    "answer" => $fallback
-]);
+echo json_encode(["status"=>"success","answer"=>$gptAnswer,"source"=>"GPT"]);
