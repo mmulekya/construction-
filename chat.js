@@ -9,14 +9,18 @@ function addMessage(text, type) {
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
+function quickAsk(q){
+  document.getElementById("question").value = q;
+  sendQuestion();
+}
+
 async function sendQuestion() {
   const input = document.getElementById("question");
-  const question = input.value;
+  const question = input.value.trim();
 
   if (!question) return;
 
   addMessage("You: " + question, "user");
-
   input.value = "";
 
   try {
@@ -27,15 +31,19 @@ async function sendQuestion() {
       },
       body: JSON.stringify({
         question: question,
-        token: "CSRF_TOKEN_HERE"
+        token: CSRF_TOKEN
       })
     });
 
     const data = await res.json();
 
-    addMessage("AI: " + (data.knowledge || "No answer found"), "ai");
+    if(data.answer){
+      addMessage("BuildSmart AI: " + data.answer, "ai");
+    } else {
+      addMessage("AI error occurred", "ai");
+    }
 
   } catch (err) {
-    addMessage("Error connecting to AI", "ai");
+    addMessage("Server error. Try again later.", "ai");
   }
 }
