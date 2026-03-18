@@ -2,10 +2,11 @@
 session_start();
 require_once "includes/security.php";
 $csrf = generate_csrf();
+?>
+
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
   <title>BuildSmart AI</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -14,10 +15,19 @@ $csrf = generate_csrf();
 <div class="container">
   <h1>🏗️ BuildSmart AI</h1>
 
+  <div style="text-align:center; margin-bottom:10px;">
+    <small>Ask about: concrete, foundations, materials, structural design</small>
+  </div>
+
   <div id="chat-box"></div>
 
+  <div>
+    <button onclick="quickAsk('What is concrete mix ratio?')">Concrete Mix</button>
+    <button onclick="quickAsk('Types of foundation?')">Foundation</button>
+  </div>
+
   <div class="input-area">
-    <input type="text" id="question" placeholder="Ask construction or engineering question..." />
+    <input type="text" id="question" placeholder="Ask your question..." />
     <button onclick="sendQuestion()">Send</button>
   </div>
 </div>
@@ -25,6 +35,8 @@ $csrf = generate_csrf();
 <script>
 const CSRF_TOKEN = "<?php echo $csrf; ?>";
 </script>
+
+<script src="chat.js"></script>
+
 </body>
 </html>
-?>
