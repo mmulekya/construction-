@@ -22,7 +22,9 @@ $csrf = generate_csrf();
   </div>
 </div>
 
-<script src="chat.js"></script>
+<script>
+const CSRF_TOKEN = "<?php echo $csrf; ?>";
+</script>
 </body>
 </html>
 ?>
