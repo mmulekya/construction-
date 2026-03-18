@@ -1,31 +1,34 @@
+
 <?php
 require_once "../includes/config.php";
 require_once "../includes/database.php";
-require_once "../includes/security.php";
 require_once "../includes/knowledge.php";
+require_once "../includes/security.php";
 
-if(!isset($_SESSION['user_id'])) exit(json_response(["error"=>"Unauthorized"]));
-if(!verify_csrf($_POST['token'])) exit(json_response(["error"=>"Invalid CSRF"]));
+header("Content-Type: application/json");
 
-$question = trim($_POST['question'] ?? '');
-if(empty($question)) exit(json_response(["error"=>"Question required"]));
+// Get input safely
+$data = json_decode(file_get_contents("php://input"), true);
+$question = sanitize($data['question'] ?? '');
 
-// Rate limiting
-if(!isset($_SESSION['ai_requests'])) $_SESSION['ai_requests']=[];
-$_SESSION['ai_requests'][]=time();
-$_SESSION['ai_requests']=array_filter($_SESSION['ai_requests'], fn($t)=>$t>time()-60);
-if(count($_SESSION['ai_requests'])>RATE_LIMIT) exit(json_response(["error"=>"Rate limit exceeded"]));
+if(empty($question)){
+    echo json_encode(["error"=>"Empty question"]);
+    exit;
+}
 
-// Get AI knowledge answer
-$knowledge=get_knowledge($conn,$question);
+// 1️⃣ Try local knowledge base FIRST (FAST & SAFE)
+$answer = get_knowledge($conn, $question);
 
-// Log the question
-log_action($conn,"AI_Question","Question: ".substr($question,0,500),$_SESSION['user_id']);
+if($answer !== "Sorry, no matching knowledge found."){
+    echo json_encode([
+        "source"=>"knowledge_base",
+        "answer"=>$answer
+    ]);
+    exit;
+}
 
-// Save to chat_analysis for trends
-$stmt=$conn->prepare("INSERT INTO chat_analysis (question, ai_response, topic) VALUES (?,?,?)");
-$topic=detect_topic($question);
-$stmt->bind_param("sss",$question,$knowledge,$topic);
-$stmt->execute();
-
-json_response(["knowledge"=>$knowledge]);
+// 2️⃣ Fallback response (since OpenAI may fail)
+echo json_encode([
+    "source"=>"fallback",
+    "answer"=>"Sorry, advanced AI is temporarily unavailable. Please try another construction-related question or check your internet/server configuration."
+]);
