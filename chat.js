@@ -9,10 +9,6 @@ function addMessage(text, type) {
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-function quickAsk(q){
-  document.getElementById("question").value = q;
-  sendQuestion();
-}
 async function loadHistory(){
   const res = await fetch("api/history.php");
   const data = await res.json();
@@ -21,6 +17,10 @@ async function loadHistory(){
     addMessage("You: " + chat.question, "user");
     addMessage("BuildSmart AI: " + chat.answer, "ai");
   });
+}
+
+function clearChat(){
+  document.getElementById("chat-box").innerHTML = "";
 }
 
 async function sendQuestion() {
@@ -39,20 +39,17 @@ async function sendQuestion() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        question: question,
-        token: CSRF_TOKEN
+        question: question
       })
     });
 
     const data = await res.json();
 
-    if(data.answer){
-      addMessage("BuildSmart AI: " + data.answer, "ai");
-    } else {
-      addMessage("AI error occurred", "ai");
-    }
+    addMessage("BuildSmart AI: " + data.answer, "ai");
 
   } catch (err) {
-    addMessage("Server error. Try again later.", "ai");
+    addMessage("Server error", "ai");
   }
 }
+
+window.onload = loadHistory;
