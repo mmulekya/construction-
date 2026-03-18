@@ -19,9 +19,17 @@ require_admin();
 <h2>💬 Chat History</h2>
 <div id="chats"></div>
 
-<h2>🧠 Add Knowledge</h2>
-<textarea id="knowledge" placeholder="Enter knowledge..."></textarea><br>
-<button onclick="addKnowledge()">Add</button>
+<h2>📄 Upload PDF</h2>
+
+<form id="pdfForm" enctype="multipart/form-data">
+  <input type="file" name="pdf" accept="application/pdf" required><br><br>
+  <button type="submit">Upload PDF</button>
+</form>
+
+<p id="status"></p>
+
+<h3>Preview Extracted Text:</h3>
+<div id="preview" style="background:#eee;padding:10px;"></div>
 
 <script>
 
