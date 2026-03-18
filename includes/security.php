@@ -1,4 +1,4 @@
-<?php
+0<?php
 function generate_csrf(){
     if(!isset($_SESSION['csrf_token'])){
         $_SESSION['csrf_token']=bin2hex(random_bytes(32));
@@ -17,6 +17,13 @@ function verify_csrf($token){
 function enforce_https(){
     if(empty($_SERVER['HTTPS']) || $_SERVER['HTTPS']!=='on'){
         header('Location: https://'.$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI']);
+        exit;
+    }
+}
+
+function require_login(){
+    if(!isset($_SESSION['user_id'])){
+        echo json_encode(["error"=>"Unauthorized"]);
         exit;
     }
 }
