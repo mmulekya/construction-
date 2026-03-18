@@ -1,19 +1,27 @@
 <?php
-function get_knowledge($conn,$query){
-    $query = sanitize($query);
-    // Simple keyword match (replace with vector search if needed)
-    $stmt = $conn->prepare("SELECT content FROM knowledge_base WHERE content LIKE ? LIMIT 1");
-    $like = "%$query%";
-    $stmt->bind_param("s",$like);
-    $stmt->execute();
-    $stmt->bind_result($content);
-    if($stmt->fetch()) return $content;
-    return "Sorry, no matching knowledge found.";
-}
+require_once "security.php";
 
-function detect_topic($text){
-    $text = strtolower($text);
-    if(strpos($text,'cement')!==false) return 'cement';
-    if(strpos($text,'concrete')!==false) return 'concrete';
-    return 'general';
+function get_knowledge($conn, $query){
+    $query = strtolower(sanitize($query));
+
+    // Break into keywords
+    $keywords = explode(" ", $query);
+    $search = "%" . implode("%", $keywords) . "%";
+
+    $stmt = $conn->prepare("SELECT content FROM knowledge_base WHERE content LIKE ? LIMIT 5");
+    $stmt->bind_param("s", $search);
+    $stmt->execute();
+
+    $result = $stmt->get_result();
+
+    $answers = [];
+    while($row = $result->fetch_assoc()){
+        $answers[] = $row['content'];
+    }
+
+    if(count($answers) > 0){
+        return implode("\n\n", $answers);
+    }
+
+    return null;
 }
