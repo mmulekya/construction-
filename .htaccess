@@ -1,9 +1,8 @@
-<Files ".env">
-    Order allow,deny
-    Deny from all
-</Files>
+# Disable directory browsing
+Options -Indexes
 
-<Files "php_errors.log">
-    Order allow,deny
-    Deny from all
-</Files>
+# Protect includes
+<FilesMatch "\.(env|ini|log|sh)$">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
