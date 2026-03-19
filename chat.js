@@ -69,3 +69,14 @@ function loadProjects(){
         });
     });
 }
+
+let currentProjectId = null;
+
+function selectProject(id, name){
+    currentProjectId = id;
+
+    document.getElementById("project_details").style.display = "block";
+    document.getElementById("project_title").innerText = name;
+
+    loadProjectData();
+}
