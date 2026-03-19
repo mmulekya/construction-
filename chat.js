@@ -38,3 +38,19 @@ function quickAsk(q){
 window.onload = function(){
     if(typeof loadHistory==="function") loadHistory();
 }
+
+function loadProjects(){
+    fetch("api/get_projects.php")
+    .then(res => res.json())
+    .then(data => {
+        let list = document.getElementById("project_list");
+        list.innerHTML = "";
+
+        data.forEach(p => {
+            let li = document.createElement("li");
+            li.innerHTML = p.name + " - " + p.description;
+            li.onclick = () => selectProject(p.id, p.name);
+            list.appendChild(li);
+        });
+    });
+}
