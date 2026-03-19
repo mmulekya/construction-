@@ -10,6 +10,21 @@ function addMessage(text,type){
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
+
+function createProject(){
+    let name = document.getElementById("project_name").value;
+    let desc = document.getElementById("project_desc").value;
+
+    fetch("api/create_project.php", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({name:name, description:desc})
+    })
+    .then(res => res.json())
+    .then(() => {
+        loadProjects();
+    });
+}
 async function sendQuestion(){
     const input = document.getElementById("question");
     const question = input.value.trim();
