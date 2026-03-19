@@ -1,8 +1,0 @@
-# Open crontab
-crontab -e
-
-# Daily database backup at 2:00 AM
-0 2 * * * /var/backups/buildsmart/backup/db_backup.sh
-
-# Daily uploaded files backup at 2:30 AM
-30 2 * * * /var/backups/buildsmart/backup/files_backup.sh
