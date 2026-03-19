@@ -80,3 +80,22 @@ function selectProject(id, name){
 
     loadProjectData();
 }
+
+function addProjectData(){
+    let content = document.getElementById("project_note").value;
+    let type = document.getElementById("data_type").value;
+
+    fetch("api/add_project_data.php", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            project_id: currentProjectId,
+            type: type,
+            content: content
+        })
+    })
+    .then(res => res.json())
+    .then(() => {
+        loadProjectData();
+    });
+}
