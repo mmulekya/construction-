@@ -47,3 +47,24 @@ if(empty($_SESSION['csrf_token'])){
 function sanitize($data){
     return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
 }
+
+// 🚫 BLOCK BAD BOTS
+$bad_agents = ['curl', 'wget', 'python', 'bot'];
+
+$user_agent = strtolower($_SERVER['HTTP_USER_AGENT'] ?? '');
+
+foreach($bad_agents as $bad){
+    if(strpos($user_agent, $bad) !== false){
+        http_response_code(403);
+        die("Access denied");
+    }
+}
+
+// 🔐 LIMIT REQUEST SIZE
+if($_SERVER['REQUEST_METHOD'] === 'POST'){
+    $input = file_get_contents("php://input");
+    if(strlen($input) > 10000){
+        http_response_code(413);
+        die("Request too large");
+    }
+}
