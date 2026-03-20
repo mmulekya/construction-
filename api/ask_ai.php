@@ -1,4 +1,6 @@
 <?php
+require_once "../includes/rate_limit.php";
+check_rate_limit($conn, "ask_ai", 10, 60); // 10 requests per minute
 require_once "../includes/config.php";
 require_once "../includes/database.php";
 require_once "../includes/security.php";
