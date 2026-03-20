@@ -1,4 +1,10 @@
-0<?php
+function require_admin(){
+    if(empty($_SESSION['user_id']) || empty($_SESSION['role']) || $_SESSION['role'] !== 'admin'){
+        http_response_code(403);
+        echo "Forbidden";
+        exit;
+    }
+}0<?php
 function generate_csrf(){
     if(!isset($_SESSION['csrf_token'])){
         $_SESSION['csrf_token']=bin2hex(random_bytes(32));
