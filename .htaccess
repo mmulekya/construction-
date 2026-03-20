@@ -1,8 +1,31 @@
-# Disable directory browsing
+# 🔒 Disable directory browsing
 Options -Indexes
 
-# Protect includes
-<FilesMatch "\.(env|ini|log|sh)$">
+# 🔒 Protect sensitive files
+<FilesMatch "\.(env|ini|log|sh|sql)$">
   Order allow,deny
   Deny from all
 </FilesMatch>
+
+# 🔒 Block direct access to includes folder
+RewriteEngine On
+RewriteRule ^includes/ - [F,L]
+
+# 🔒 Block access to uploads (handled separately if needed)
+RewriteRule ^uploads/.*$ - [F,L]
+
+# 🔐 Prevent access to hidden files (.env, .git, etc.)
+<FilesMatch "^\.">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
+
+# 🛡️ Basic security headers
+Header set X-Content-Type-Options "nosniff"
+Header set X-Frame-Options "SAMEORIGIN"
+Header set X-XSS-Protection "1; mode=block"
+
+# 🔒 Disable PHP execution in uploads (extra safety)
+<Directory "uploads">
+  php_flag engine off
+</Directory>
