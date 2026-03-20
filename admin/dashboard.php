@@ -1,95 +1,119 @@
 <?php
 session_start();
-
-require_once "../includes/config.php";
-require_once "../includes/database.php";
 require_once "../includes/security.php";
-
-// 🔐 Ensure user is logged in
-if(empty($_SESSION['user_id'])){
-    http_response_code(401);
-    exit("Unauthorized");
-}
-
-// 🔐 Permission check
-if(!has_permission($conn, $_SESSION['user_id'], 'view_logs')){
-    http_response_code(403);
-    exit("Access denied");
-}
-
-// AI Questions per day
-$ai_stats = $conn->query("
-    SELECT DATE(created_at) AS day, COUNT(*) AS total_questions
-    FROM logs 
-    WHERE action_type='AI_Question' 
-    GROUP BY DATE(created_at) 
-    ORDER BY day DESC
-");
-
-// Calculator usage
-$calc_stats = $conn->query("
-    SELECT action_details, COUNT(*) AS usage_count
-    FROM logs 
-    WHERE action_type='Calculator_Use' 
-    GROUP BY action_details 
-    ORDER BY usage_count DESC 
-    LIMIT 10
-");
-
-// Knowledge base stats
-$knowledge_stats = $conn->query("
-    SELECT source_type, COUNT(*) AS total 
-    FROM knowledge_base 
-    GROUP BY source_type
-");
+require_admin();
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>BuildSmart Admin Dashboard</title>
-    <style>
-        table { border-collapse: collapse; width: 60%; margin-bottom: 20px; }
-        th, td { border: 1px solid #ccc; padding: 8px; }
-        th { background: #f4f4f4; }
-    </style>
+    <title>Admin Dashboard - BuildSmart</title>
 </head>
 <body>
 
-<h2>🛠️ BuildSmart Analytics Dashboard</h2>
+<h2>🛠️ Admin Security Dashboard</h2>
 
-<h3>AI Questions (Per Day)</h3>
-<table>
-<tr><th>Date</th><th>Total Questions</th></tr>
-<?php while($row = $ai_stats->fetch_assoc()): ?>
-<tr>
-    <td><?= htmlspecialchars($row['day']) ?></td>
-    <td><?= (int)$row['total_questions'] ?></td>
-</tr>
-<?php endwhile; ?>
-</table>
+<div id="stats"></div>
 
-<h3>Top 10 Calculator Usage</h3>
-<table>
-<tr><th>Calculator</th><th>Usage Count</th></tr>
-<?php while($row = $calc_stats->fetch_assoc()): ?>
-<tr>
-    <td><?= htmlspecialchars($row['action_details']) ?></td>
-    <td><?= (int)$row['usage_count'] ?></td>
-</tr>
-<?php endwhile; ?>
-</table>
+<h3>Users</h3>
+<ul id="users"></ul>
 
-<h3>Knowledge Base Additions</h3>
-<table>
-<tr><th>Source</th><th>Total Entries</th></tr>
-<?php while($row = $knowledge_stats->fetch_assoc()): ?>
-<tr>
-    <td><?= htmlspecialchars($row['source_type']) ?></td>
-    <td><?= (int)$row['total'] ?></td>
-</tr>
-<?php endwhile; ?>
-</table>
+<h3>Logs</h3>
+<ul id="logs"></ul>
+
+<script>
+function loadDashboard(){
+
+    // Load stats
+    fetch("../api/admin/dashboard.php")
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("stats").innerHTML =
+            "Users: " + data.users +
+            " | Chats: " + data.chats +
+            " | Projects: " + data.projects +
+            " | Logs: " + data.logs;
+    });
+
+    // Load users
+    fetch("../api/admin/users.php")
+    .then(res => res.json())
+    .then(users => {
+        renderUsers(users);
+    });
+
+    // Load logs
+    fetch("../api/admin/logs.php")
+    .then(res => res.json())
+    .then(logs => {
+        let list = document.getElementById("logs");
+        list.innerHTML = "";
+
+        logs.forEach(l => {
+            let li = document.createElement("li");
+            li.innerText = l.action + " | " + l.ip_address + " | " + l.created_at;
+            list.appendChild(li);
+        });
+    });
+}
+
+function renderUsers(users){
+    let list = document.getElementById("users");
+    list.innerHTML = "";
+
+    users.forEach(u => {
+
+        let li = document.createElement("li");
+
+        let toggleStatus = (u.status === 'active') ? 'suspended' : 'active';
+        let toggleText = (u.status === 'active') ? 'Suspend' : 'Activate';
+
+        let toggleRole = (u.role === 'admin') ? 'user' : 'admin';
+        let roleText = (u.role === 'admin') ? 'Make User' : 'Make Admin';
+
+        li.innerHTML = `
+            ${u.name} - ${u.email} (${u.role}) [${u.status}]
+
+            <button onclick="updateStatus(${u.id}, '${toggleStatus}')">${toggleText}</button>
+            <button onclick="updateRole(${u.id}, '${toggleRole}')">${roleText}</button>
+            <button onclick="deleteUser(${u.id})">Delete</button>
+        `;
+
+        list.appendChild(li);
+    });
+}
+
+function updateStatus(id, status){
+    fetch("../api/admin/toggle_user_status.php", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({user_id: id, status: status})
+    })
+    .then(() => loadDashboard());
+}
+
+function updateRole(id, role){
+    fetch("../api/admin/change_role.php", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({user_id: id, role: role})
+    })
+    .then(() => loadDashboard());
+}
+
+function deleteUser(id){
+    if(confirm("Are you sure you want to delete this user?")){
+        fetch("../api/admin/delete_user.php", {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({user_id: id})
+        })
+        .then(() => loadDashboard());
+    }
+}
+
+loadDashboard();
+</script>
 
 </body>
 </html>
