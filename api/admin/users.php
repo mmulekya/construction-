@@ -8,12 +8,16 @@ require_admin();
 
 header("Content-Type: application/json");
 
-$res = $conn->query("SELECT id, name, email, role, created_at FROM users ORDER BY id DESC");
+// Fetch users with status included
+$sql = "SELECT id, name, email, role, status, created_at FROM users ORDER BY id DESC";
+$result = $conn->query($sql);
 
-$data = [];
+$users = [];
 
-while($row = $res->fetch_assoc()){
-    $data[] = $row;
+if($result){
+    while($row = $result->fetch_assoc()){
+        $users[] = $row;
+    }
 }
 
-echo json_encode($data);
+echo json_encode($users);
