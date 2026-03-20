@@ -1,4 +1,6 @@
 <?php
+require_once "../includes/rate_limit.php";
+check_rate_limit($conn, "login", 5, 60); // stricter
 require_once "../includes/config.php";
 require_once "../includes/database.php";
 require_once "../includes/security.php";
