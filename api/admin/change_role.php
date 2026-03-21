@@ -1,18 +1,23 @@
 <?php
+
 require_once "../../includes/config.php";
 require_once "../../includes/database.php";
 require_once "../../includes/security.php";
 
-session_start();
+header("Content-Type: application/json");
+
+require_login();
 require_admin();
 
-$data = json_decode(file_get_contents("php://input"), true);
+if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
+    exit(json_encode(["error"=>"Invalid CSRF"]));
+}
 
-$user_id = intval($data['user_id']);
-$role = $data['role']; // user | admin
+$id = intval($_POST['id'] ?? 0);
+$role = $_POST['role'] ?? 'user';
 
 $stmt = $conn->prepare("UPDATE users SET role=? WHERE id=?");
-$stmt->bind_param("si", $role, $user_id);
+$stmt->bind_param("si", $role, $id);
 $stmt->execute();
 
 echo json_encode(["success"=>true]);
