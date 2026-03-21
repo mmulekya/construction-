@@ -1,19 +1,26 @@
 <?php
-require_once "../includes/rate_limit.php";
-check_rate_limit($conn, "project", 15, 60);
+
 require_once "../includes/config.php";
 require_once "../includes/database.php";
 require_once "../includes/security.php";
 require_once "../includes/project.php";
 
-session_start();
+header("Content-Type: application/json");
+
 require_login();
 
-$data = json_decode(file_get_contents("php://input"), true);
+// CSRF
+if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
+    exit(json_encode(["error"=>"Invalid CSRF"]));
+}
 
-$name = sanitize($data['name']);
-$description = sanitize($data['description']);
+$name = trim($_POST['name'] ?? '');
+$description = trim($_POST['description'] ?? '');
 
-$id = create_project($conn, $_SESSION['user_id'], $name, $description);
+if(empty($name)){
+    exit(json_encode(["error"=>"Project name required"]));
+}
 
-echo json_encode(["success"=>true, "project_id"=>$id]);
+create_project($conn, $_SESSION['user_id'], $name, $description);
+
+echo json_encode(["success"=>true]);
