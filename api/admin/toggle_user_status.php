@@ -1,18 +1,28 @@
 <?php
+
 require_once "../../includes/config.php";
 require_once "../../includes/database.php";
 require_once "../../includes/security.php";
 
-session_start();
+header("Content-Type: application/json");
+
+require_login();
 require_admin();
 
-$data = json_decode(file_get_contents("php://input"), true);
+if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
+    exit(json_encode(["error"=>"Invalid CSRF"]));
+}
 
-$user_id = intval($data['user_id']);
-$status = $data['status']; // active | suspended
+$id = intval($_POST['id'] ?? 0);
 
-$stmt = $conn->prepare("UPDATE users SET status=? WHERE id=?");
-$stmt->bind_param("si", $status, $user_id);
+// Toggle status
+$stmt = $conn->prepare("
+    UPDATE users 
+    SET status = IF(status='active','suspended','active')
+    WHERE id=?
+");
+
+$stmt->bind_param("i", $id);
 $stmt->execute();
 
 echo json_encode(["success"=>true]);
