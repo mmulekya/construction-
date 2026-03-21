@@ -1,19 +1,22 @@
 <?php
+
 require_once "../../includes/config.php";
 require_once "../../includes/database.php";
 require_once "../../includes/security.php";
 
-session_start();
-require_admin();
-
 header("Content-Type: application/json");
 
-$res = $conn->query("SELECT * FROM logs ORDER BY id DESC LIMIT 100");
+require_login();
+require_admin();
 
-$data = [];
+$result = $conn->query("
+    SELECT * FROM login_attempts ORDER BY created_at DESC LIMIT 200
+");
 
-while($row = $res->fetch_assoc()){
-    $data[] = $row;
+$logs = [];
+
+while($row = $result->fetch_assoc()){
+    $logs[] = $row;
 }
 
-echo json_encode($data);
+echo json_encode(["success"=>true, "logs"=>$logs]);
