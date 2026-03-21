@@ -1,49 +1,51 @@
-<?php
+<?php require_once "includes/security.php"; ?>
 
-require_once "includes/database.php";
-require_once "includes/security.php";
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+</head>
+<body>
 
-if($_SERVER["REQUEST_METHOD"]=="POST"){
+<h2>Login</h2>
 
-$email = sanitize_input($_POST['email']);
-$password = $_POST['password'];
+<form id="loginForm">
 
-$stmt = $conn->prepare(
-"SELECT id,password FROM users WHERE email=?"
-);
+<input type="email" name="email" placeholder="Email" required>
+<input type="password" name="password" placeholder="Password" required>
 
-$stmt->bind_param("s",$email);
-$stmt->execute();
-
-$result = $stmt->get_result();
-
-if($result->num_rows === 1){
-
-$user = $result->fetch_assoc();
-
-if(password_verify($password,$user['password'])){
-
-$_SESSION['user_id'] = $user['id'];
-
-header("Location: chat.php");
-exit();
-
-}
-
-}
-
-echo "Invalid login";
-
-}
-
-?>
-
-<form method="POST">
-
-<input type="email" name="email" required>
-
-<input type="password" name="password" required>
+<input type="hidden" name="csrf_token" id="csrf_token">
 
 <button type="submit">Login</button>
 
 </form>
+
+<script>
+fetch('includes/get_csrf.php')
+.then(res=>res.json())
+.then(data=>{
+    document.getElementById('csrf_token').value = data.token;
+});
+
+document.getElementById('loginForm').onsubmit = function(e){
+    e.preventDefault();
+
+    let formData = new FormData(this);
+
+    fetch('api/login.php',{
+        method:'POST',
+        body:formData
+    })
+    .then(res=>res.json())
+    .then(data=>{
+        if(data.success){
+            window.location.href='index.php';
+        } else {
+            alert(data.error);
+        }
+    });
+};
+</script>
+
+</body>
+</html>
