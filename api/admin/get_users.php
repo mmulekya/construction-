@@ -1,16 +1,20 @@
 <?php
+
 require_once "../../includes/config.php";
 require_once "../../includes/database.php";
 require_once "../../includes/security.php";
 
-session_start();
+header("Content-Type: application/json");
+
+require_login();
 require_admin();
 
-$result = $conn->query("SELECT id, username, email, role, created_at FROM users");
+$result = $conn->query("SELECT id, name, email, role, status FROM users ORDER BY id DESC");
 
-$data = [];
+$users = [];
+
 while($row = $result->fetch_assoc()){
-    $data[] = $row;
+    $users[] = $row;
 }
 
-echo json_encode($data);
+echo json_encode(["success"=>true, "users"=>$users]);
