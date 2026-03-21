@@ -6,19 +6,19 @@ require_once __DIR__ . "/config.php";
    1. LOAD DATABASE CREDENTIALS
 ============================== */
 
-$host = DB_HOST ?? 'localhost';
-$user = DB_USER ?? '';
-$pass = DB_PASS ?? '';
-$db   = DB_NAME ?? '';
+$host = defined('DB_HOST') ? DB_HOST : 'localhost';
+$user = defined('DB_USER') ? DB_USER : '';
+$pass = defined('DB_PASS') ? DB_PASS : '';
+$db   = defined('DB_NAME') ? DB_NAME : '';
 
 /* ==============================
    2. MYSQLI SECURITY SETTINGS
 ============================== */
 
-// Disable direct error output
+// Disable mysqli error output
 mysqli_report(MYSQLI_REPORT_OFF);
 
-// Set connection timeout (important for InfinityFree)
+// Timeouts (InfinityFree safe)
 ini_set('mysql.connect_timeout', 5);
 ini_set('default_socket_timeout', 5);
 
@@ -37,7 +37,9 @@ if ($conn->connect_error) {
     error_log("DB Connection Error: " . $conn->connect_error);
 
     http_response_code(500);
-    exit("System temporarily unavailable.");
+    exit(json_encode([
+        "error" => "System temporarily unavailable"
+    ]));
 }
 
 /* ==============================
@@ -49,11 +51,13 @@ if (!$conn->set_charset("utf8mb4")) {
     error_log("Charset Error: " . $conn->error);
 
     http_response_code(500);
-    exit("System error.");
+    exit(json_encode([
+        "error" => "System error"
+    ]));
 }
 
 /* ==============================
-   6. STRICT SQL MODE (HARDENED)
+   6. STRICT SQL MODE (SAFE VERSION)
 ============================== */
 
 $conn->query("
@@ -61,8 +65,7 @@ SET SESSION sql_mode =
 'STRICT_ALL_TABLES,
 ERROR_FOR_DIVISION_BY_ZERO,
 NO_ZERO_DATE,
-NO_ZERO_IN_DATE,
-ONLY_FULL_GROUP_BY'
+NO_ZERO_IN_DATE'
 ");
 
 /* ==============================
@@ -116,7 +119,7 @@ function db_fetch_all($stmt) {
 }
 
 /* ==============================
-   9. SAFE INSERT HELPER
+   9. EXECUTION HELPER
 ============================== */
 
 function db_execute($stmt){
@@ -128,4 +131,10 @@ function db_execute($stmt){
     return $success;
 }
 
-?>
+/* ==============================
+   10. LAST INSERT ID HELPER
+============================== */
+
+function db_last_id($conn){
+    return $conn->insert_id;
+}
