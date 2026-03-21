@@ -1,35 +1,58 @@
 <?php
+
 require_once "../includes/config.php";
 require_once "../includes/database.php";
-require_once "../includes/rate_limit.php";
+require_once "../includes/security.php";
 
-$data = json_decode(file_get_contents("php://input"), true);
+header("Content-Type: application/json");
 
-// 🔐 Apply rate limiting
-check_rate_limit($conn, "register", 3, 60); // 3 requests per minute
+// CSRF
+if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
+    exit(json_encode(["error"=>"Invalid CSRF"]));
+}
 
-$name = sanitize($data['name'] ?? '');
-$email = sanitize($data['email'] ?? '');
-$password_plain = $data['password'] ?? '';
+$name = trim($_POST['name'] ?? '');
+$email = trim($_POST['email'] ?? '');
+$password = $_POST['password'] ?? '';
 
-$password = password_hash($password_plain, PASSWORD_DEFAULT);
+if(empty($name) || empty($email) || empty($password)){
+    exit(json_encode(["error"=>"All fields required"]));
+}
 
-// Generate verification token
+// Validate email
+if(!filter_var($email, FILTER_VALIDATE_EMAIL)){
+    exit(json_encode(["error"=>"Invalid email"]));
+}
+
+// Strong password
+if(strlen($password) < 6){
+    exit(json_encode(["error"=>"Password must be at least 6 characters"]);
+}
+
+// Check existing
+$stmt = $conn->prepare("SELECT id FROM users WHERE email=?");
+$stmt->bind_param("s", $email);
+$stmt->execute();
+
+if($stmt->get_result()->num_rows > 0){
+    exit(json_encode(["error"=>"Email already exists"]));
+}
+
+// Hash password
+$hashed = password_hash($password, PASSWORD_BCRYPT);
+
+// Email verification token
 $token = bin2hex(random_bytes(32));
 
-$stmt = $conn->prepare("INSERT INTO users (name, email, password, verification_token) VALUES (?,?,?,?)");
-$stmt->bind_param("ssss", $name, $email, $password, $token);
+$stmt = $conn->prepare("
+    INSERT INTO users (name, email, password, verify_token, status)
+    VALUES (?, ?, ?, ?, 'inactive')
+");
+$stmt->bind_param("ssss", $name, $email, $hashed, $token);
+$stmt->execute();
 
-if($stmt->execute()){
-
-    $verify_link = "https://yourdomain.com/api/verify_email.php?token=" . $token;
-
-    $subject = "Verify your BuildSmart account";
-    $message = "Click this link to verify your email:\n\n" . $verify_link;
-
-    @mail($email, $subject, $message);
-
-    echo json_encode(["success"=>true, "message"=>"Check your email to verify your account"]);
-} else {
-    echo json_encode(["error"=>"Registration failed"]);
-}
+// NOTE: Send email here (or simulate)
+echo json_encode([
+    "success"=>true,
+    "message"=>"Registered. Please verify your email."
+]);
