@@ -1,17 +1,36 @@
 <?php
+
 require_once "../includes/config.php";
+require_once "../includes/database.php";
 require_once "../includes/security.php";
 
-if(!has_permission($conn,$_SESSION['user_id'],'add_knowledge')) exit(json_response(["error"=>"Access denied"]));
+header("Content-Type: application/json");
+
+require_login();
+
+// CSRF
+if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
+    exit(json_encode(["error"=>"Invalid CSRF"]));
+}
+
 $title = trim($_POST['title'] ?? '');
 $content = trim($_POST['content'] ?? '');
-if(!$title || !$content) exit(json_response(["error"=>"Title and content required"]));
 
-$embedding = generate_embedding($content); // AI embedding
-$stmt=$conn->prepare("INSERT INTO knowledge_base (title, content, embedding, source_type) VALUES (?,?,?,?)");
-$source_type='user_submission';
-$stmt->bind_param("ssss",$title,$content,$embedding,$source_type);
+if(empty($title) || empty($content)){
+    exit(json_encode(["error"=>"All fields required"]));
+}
+
+// Optional: only admin can add knowledge
+if(!is_admin()){
+    exit(json_encode(["error"=>"Admin only"]));
+}
+
+$stmt = $conn->prepare("
+    INSERT INTO knowledge_base (title, content, created_at)
+    VALUES (?, ?, NOW())
+");
+
+$stmt->bind_param("ss", $title, $content);
 $stmt->execute();
 
-log_action($conn,"Knowledge_Added","Added title '$title'",$_SESSION['user_id']);
-json_response(["success"=>true]);
+echo json_encode(["success"=>true]);
