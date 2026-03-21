@@ -1,22 +1,20 @@
 <?php
 
-function save_chat($conn, $user_id, $question, $answer){
+function save_chat_history($conn, $user_id, $message, $response){
     $stmt = $conn->prepare("
-        INSERT INTO chat_history (user_id, question, answer)
-        VALUES (?, ?, ?)
+        INSERT INTO chat_history (user_id, message, response, created_at)
+        VALUES (?, ?, ?, NOW())
     ");
-    $stmt->bind_param("iss", $user_id, $question, $answer);
+
+    $stmt->bind_param("iss", $user_id, $message, $response);
     $stmt->execute();
 }
 
-function get_user_history($conn, $user_id){
+function get_chat_history($conn, $user_id){
     $stmt = $conn->prepare("
-        SELECT question, answer, created_at 
-        FROM chat_history 
-        WHERE user_id=? 
-        ORDER BY id DESC 
-        LIMIT 20
+        SELECT * FROM chat_history WHERE user_id=? ORDER BY created_at DESC
     ");
+
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
 
