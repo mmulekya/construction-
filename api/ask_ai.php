@@ -12,22 +12,54 @@ require_once "../includes/memory.php";
 
 header("Content-Type: application/json");
 
-session_start();
-require_login();
-
-$user_id = $_SESSION['user_id'];
+// Start session safely
+if(session_status() === PHP_SESSION_NONE){
+    session_start();
+}
 
 /* =========================
-   🔐 RATE LIMIT (AFTER DB)
+   🔐 AUTH (SESSION OR JWT)
+========================= */
+
+$user_id = null;
+
+// Try session first
+if(isset($_SESSION['user_id'])){
+    $user_id = $_SESSION['user_id'];
+}
+
+// Fallback to JWT
+if(!$user_id){
+    $headers = getallheaders();
+    $token = $headers['Authorization'] ?? '';
+
+    if($token){
+        $user_id = verify_jwt($token);
+    }
+}
+
+if(!$user_id){
+    exit(json_encode(["error"=>"Unauthorized"]));
+}
+
+/* =========================
+   🔐 RATE LIMIT (ANTI-SPAM)
 ========================= */
 check_rate_limit($conn, "ask_ai_" . $user_id, 10, 60);
 
 /* =========================
+   🔐 INPUT (SAFE JSON)
+========================= */
+$input = json_decode(file_get_contents("php://input"), true);
+
+if(!$input){
+    exit(json_encode(["error"=>"Invalid request"]));
+}
+
+/* =========================
    🔐 CSRF PROTECTION
 ========================= */
-$data = json_decode(file_get_contents("php://input"), true);
-
-$csrf = $data['csrf_token'] ?? '';
+$csrf = $input['csrf_token'] ?? '';
 
 if(!verify_csrf_token($csrf)){
     exit(json_encode(["error"=>"Invalid CSRF token"]));
@@ -36,19 +68,43 @@ if(!verify_csrf_token($csrf)){
 /* =========================
    INPUT VALIDATION
 ========================= */
-$question = trim($data['question'] ?? '');
-$project_id = intval($data['project_id'] ?? 0);
+$question = trim($input['question'] ?? '');
+$project_id = intval($input['project_id'] ?? 0);
 
 if(empty($question)){
     exit(json_encode(["error"=>"Empty question"]));
 }
 
-// Limit abuse (anti-spam)
 if(strlen($question) > 1000){
     exit(json_encode(["error"=>"Question too long"]));
 }
 
-$response = "";
+/* =========================
+   🔐 AI DAILY LIMIT
+========================= */
+$stmt = $conn->prepare("
+    SELECT requests FROM ai_usage 
+    WHERE user_id=? AND last_request=CURDATE()
+");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+
+$usage = $stmt->get_result()->fetch_assoc();
+
+if($usage && $usage['requests'] >= 50){
+    exit(json_encode([
+        "error"=>"Daily AI limit reached (50 requests)"
+    ]));
+}
+
+// Update usage safely
+$stmt = $conn->prepare("
+    INSERT INTO ai_usage (user_id, requests, last_request)
+    VALUES (?, 1, CURDATE())
+    ON DUPLICATE KEY UPDATE requests = requests + 1
+");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
 
 /* =========================
    STEP 1: CALCULATOR
@@ -76,7 +132,8 @@ $memory_text = "";
 
 try{
     $memory_data = get_memory($conn, $user_id, "chat");
-    if($memory_data){
+
+    if($memory_data && isset($memory_data['memory_value'])){
         $memory_text = substr($memory_data['memory_value'], 0, 500);
     }
 }catch(Exception $e){
@@ -90,21 +147,29 @@ $project_context = "";
 
 if($project_id > 0){
 
-    $stmt = $conn->prepare("
-        SELECT data, created_at 
-        FROM project_data 
-        WHERE project_id=? 
-        ORDER BY id DESC 
-        LIMIT 20
-    ");
+    // 🔐 Ensure project belongs to user
+    $check = $conn->prepare("SELECT id FROM projects WHERE id=? AND user_id=?");
+    $check->bind_param("ii", $project_id, $user_id);
+    $check->execute();
 
-    $stmt->bind_param("i", $project_id);
-    $stmt->execute();
+    if($check->get_result()->num_rows > 0){
 
-    $result = $stmt->get_result();
+        $stmt = $conn->prepare("
+            SELECT data 
+            FROM project_data 
+            WHERE project_id=? 
+            ORDER BY id DESC 
+            LIMIT 20
+        ");
 
-    while($row = $result->fetch_assoc()){
-        $project_context .= $row['data'] . "\n";
+        $stmt->bind_param("i", $project_id);
+        $stmt->execute();
+
+        $result = $stmt->get_result();
+
+        while($row = $result->fetch_assoc()){
+            $project_context .= $row['data'] . "\n";
+        }
     }
 }
 
