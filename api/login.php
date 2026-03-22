@@ -14,15 +14,22 @@ if(!verify_csrf_token($csrf)){
 
 $email = trim($_POST['email'] ?? '');
 $password = trim($_POST['password'] ?? '');
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
 if(empty($email) || empty($password)){
     exit(json_encode(["error"=>"All fields required"]));
 }
 
-// Rate limit
+// 🔐 Rate limit (email)
 if(is_rate_limited($conn, $email)){
     log_login_attempt($conn, $email, 0);
     exit(json_encode(["error"=>"Too many attempts. Try later."]));
+}
+
+// 🔐 Rate limit (IP)
+if(is_rate_limited($conn, $ip)){
+    log_login_attempt($conn, $email, 0);
+    exit(json_encode(["error"=>"Too many requests from your IP"]));
 }
 
 // Fetch user
@@ -31,7 +38,7 @@ $stmt->bind_param("s", $email);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
-// Validate
+// Validate credentials
 if(!$user || !password_verify($password, $user['password'])){
     log_login_attempt($conn, $email, 0);
     exit(json_encode(["error"=>"Invalid credentials"]));
@@ -42,12 +49,25 @@ if($user['status'] !== 'active'){
     exit(json_encode(["error"=>"Account suspended"]));
 }
 
-// Session fixation protection
-session_regenerate_id(true);
+// 🔐 Generate OTP (2FA)
+$otp = rand(100000, 999999);
 
-$_SESSION['user_id'] = $user['id'];
-$_SESSION['role'] = $user['role'];
+$stmt = $conn->prepare("
+    UPDATE users 
+    SET otp_code=?, otp_expires=DATE_ADD(NOW(), INTERVAL 5 MINUTE)
+    WHERE id=?
+");
+$stmt->bind_param("si", $otp, $user['id']);
+$stmt->execute();
 
+// Log success attempt (before OTP verification step)
 log_login_attempt($conn, $email, 1);
 
-echo json_encode(["success"=>true]);
+// 🔐 IMPORTANT: Do NOT create session yet (wait for OTP)
+echo json_encode([
+    "otp_required" => true,
+    "user_id" => $user['id'],
+
+    // ⚠️ REMOVE THIS IN PRODUCTION
+    "otp" => $otp
+]);
