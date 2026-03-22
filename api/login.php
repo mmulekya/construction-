@@ -7,61 +7,109 @@ require_once "../includes/mailer.php";
 
 header("Content-Type: application/json");
 
+// Get client IP safely
 $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
-// 🔐 BLOCKED IP CHECK
+/* =========================
+   🔐 BLOCKED IP CHECK
+========================= */
 if(is_ip_blocked($conn)){
-    exit(json_encode(["error"=>"Your IP has been blocked due to suspicious activity"]));
+    exit(json_encode([
+        "error"=>"Access denied. Your IP has been blocked."
+    ]));
 }
 
-// 🔐 CSRF
+/* =========================
+   🔐 CSRF PROTECTION
+========================= */
 $csrf = $_POST['csrf_token'] ?? '';
 if(!verify_csrf_token($csrf)){
-    exit(json_encode(["error"=>"Invalid CSRF token"]));
+    exit(json_encode([
+        "error"=>"Invalid CSRF token"
+    ]));
 }
 
-$email = trim($_POST['email'] ?? '');
+/* =========================
+   🧾 INPUT VALIDATION
+========================= */
+$email = filter_var(trim($_POST['email'] ?? ''), FILTER_VALIDATE_EMAIL);
 $password = trim($_POST['password'] ?? '');
 
-if(empty($email) || empty($password)){
-    exit(json_encode(["error"=>"All fields required"]));
+if(!$email || empty($password)){
+    exit(json_encode([
+        "error"=>"Valid email and password required"
+    ]));
 }
 
-// 🔐 RATE LIMIT (EMAIL)
+/* =========================
+   🔐 RATE LIMIT (EMAIL)
+========================= */
 if(is_rate_limited($conn, $email)){
     log_login_attempt($conn, $email, 0);
     auto_block_ip($conn, $ip);
-    exit(json_encode(["error"=>"Too many attempts. Try later."]));
+
+    exit(json_encode([
+        "error"=>"Too many login attempts. Try again later."
+    ]));
 }
 
-// 🔐 RATE LIMIT (IP)
+/* =========================
+   🔐 RATE LIMIT (IP)
+========================= */
 if(is_rate_limited($conn, $ip)){
     log_login_attempt($conn, $email, 0);
     auto_block_ip($conn, $ip);
-    exit(json_encode(["error"=>"Too many requests from your IP"]));
+
+    exit(json_encode([
+        "error"=>"Too many requests from your IP"
+    ]));
 }
 
-// 🔍 FETCH USER
-$stmt = $conn->prepare("SELECT id, password, role, status FROM users WHERE email=? LIMIT 1");
+/* =========================
+   🔍 FETCH USER
+========================= */
+$stmt = $conn->prepare("
+    SELECT id, password, role, status 
+    FROM users 
+    WHERE email=? LIMIT 1
+");
 $stmt->bind_param("s", $email);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
-// ❌ INVALID LOGIN
+/* =========================
+   ❌ INVALID LOGIN
+========================= */
 if(!$user || !password_verify($password, $user['password'])){
     log_login_attempt($conn, $email, 0);
     auto_block_ip($conn, $ip);
-    exit(json_encode(["error"=>"Invalid credentials"]));
+
+    exit(json_encode([
+        "error"=>"Invalid credentials"
+    ]));
 }
 
-// ❌ ACCOUNT STATUS
+/* =========================
+   ❌ ACCOUNT STATUS CHECK
+========================= */
 if($user['status'] !== 'active'){
-    exit(json_encode(["error"=>"Account suspended"]));
+    exit(json_encode([
+        "error"=>"Account is suspended or not verified"
+    ]));
 }
 
-// 🔐 GENERATE OTP
-$otp = rand(100000, 999999);
+/* =========================
+   🔐 GENERATE SECURE OTP
+========================= */
+try {
+    $otp = random_int(100000, 999999); // more secure than rand()
+} catch (Exception $e) {
+    $otp = rand(100000, 999999); // fallback
+}
 
+/* =========================
+   💾 STORE OTP
+========================= */
 $stmt = $conn->prepare("
     UPDATE users 
     SET otp_code=?, otp_expires=DATE_ADD(NOW(), INTERVAL 5 MINUTE)
@@ -70,19 +118,27 @@ $stmt = $conn->prepare("
 $stmt->bind_param("si", $otp, $user['id']);
 $stmt->execute();
 
-// 📧 SEND OTP EMAIL
+/* =========================
+   📧 SEND OTP EMAIL
+========================= */
 $message = "
-<h3>Your Login OTP</h3>
-<p>Your OTP code is: <b>$otp</b></p>
-<p>This code expires in 5 minutes.</p>
+<h3>Login Verification</h3>
+<p>Your OTP code is:</p>
+<h2>$otp</h2>
+<p>This code will expire in 5 minutes.</p>
+<p>If you did not request this, ignore this email.</p>
 ";
 
 send_email($email, "Your Login OTP", $message);
 
-// ✅ LOG SUCCESS ATTEMPT
+/* =========================
+   ✅ LOG SUCCESS
+========================= */
 log_login_attempt($conn, $email, 1);
 
-// 🔐 DO NOT CREATE SESSION YET (WAIT FOR OTP)
+/* =========================
+   🔐 RESPONSE (NO SESSION YET)
+========================= */
 echo json_encode([
     "otp_required" => true,
     "user_id" => $user['id']
