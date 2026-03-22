@@ -160,6 +160,38 @@ function verify_jwt($token){
 
     $secret = getenv('CSRF_SECRET') ?: "fallback_secret";
 
+/* =========================
+   IP BLOCK SYSTEM
+========================= */
+
+function is_ip_blocked($conn){
+    $ip = $_SERVER['REMOTE_ADDR'];
+
+    $stmt = $conn->prepare("SELECT id FROM blocked_ips WHERE ip=?");
+    $stmt->bind_param("s", $ip);
+    $stmt->execute();
+
+    return $stmt->get_result()->num_rows > 0;
+}
+
+function auto_block_ip($conn, $ip){
+
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as attempts 
+        FROM login_attempts 
+        WHERE ip=? AND success=0 AND created_at > (NOW() - INTERVAL 10 MINUTE)
+    ");
+    $stmt->bind_param("s", $ip);
+    $stmt->execute();
+
+    $data = $stmt->get_result()->fetch_assoc();
+
+    if($data['attempts'] >= 10){
+        $stmt = $conn->prepare("INSERT INTO blocked_ips (ip) VALUES (?)");
+        $stmt->bind_param("s", $ip);
+        $stmt->execute();
+    }
+}
     $valid_sig = hash_hmac('sha256', $base, $secret);
 
     if(!hash_equals($valid_sig, $signature)){
