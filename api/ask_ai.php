@@ -17,18 +17,21 @@ if(session_status() === PHP_SESSION_NONE){
     session_start();
 }
 
+// 🔐 Clean old login attempts (reduce DB size)
+clean_old_attempts($conn);
+
 /* =========================
    🔐 AUTH (SESSION OR JWT)
 ========================= */
 
 $user_id = null;
 
-// Try session first
+// Session first
 if(isset($_SESSION['user_id'])){
     $user_id = $_SESSION['user_id'];
 }
 
-// Fallback to JWT
+// JWT fallback
 if(!$user_id){
     $headers = getallheaders();
     $token = $headers['Authorization'] ?? '';
@@ -43,9 +46,9 @@ if(!$user_id){
 }
 
 /* =========================
-   🔐 RATE LIMIT (ANTI-SPAM)
+   🔐 RATE LIMIT (STRICT)
 ========================= */
-check_rate_limit($conn, "ask_ai_" . $user_id, 10, 60);
+check_rate_limit($conn, "ask_ai_" . $user_id, 5, 60); // 5 requests per minute
 
 /* =========================
    🔐 INPUT (SAFE JSON)
@@ -57,7 +60,7 @@ if(!$input){
 }
 
 /* =========================
-   🔐 CSRF PROTECTION
+   🔐 CSRF
 ========================= */
 $csrf = $input['csrf_token'] ?? '';
 
@@ -66,21 +69,26 @@ if(!verify_csrf_token($csrf)){
 }
 
 /* =========================
-   INPUT VALIDATION
+   🧾 VALIDATION
 ========================= */
 $question = trim($input['question'] ?? '');
 $project_id = intval($input['project_id'] ?? 0);
 
-if(empty($question)){
-    exit(json_encode(["error"=>"Empty question"]));
+if(strlen($question) < 3){
+    exit(json_encode(["error"=>"Invalid input"]));
 }
 
-if(strlen($question) > 1000){
+if(strlen($question) > 500){
     exit(json_encode(["error"=>"Question too long"]));
 }
 
 /* =========================
-   🔐 AI DAILY LIMIT
+   🛑 ANTI-BOT DELAY
+========================= */
+usleep(300000); // 0.3 sec
+
+/* =========================
+   🔐 AI DAILY LIMIT (REDUCED)
 ========================= */
 $stmt = $conn->prepare("
     SELECT requests FROM ai_usage 
@@ -91,9 +99,9 @@ $stmt->execute();
 
 $usage = $stmt->get_result()->fetch_assoc();
 
-if($usage && $usage['requests'] >= 50){
+if($usage && $usage['requests'] >= 20){
     exit(json_encode([
-        "error"=>"Daily AI limit reached (50 requests)"
+        "error"=>"Daily AI limit reached (20 requests)"
     ]));
 }
 
@@ -114,8 +122,8 @@ $calc = calculate_engineering($question);
 if($calc){
     save_chat_history($conn, $user_id, $question, $calc);
 
-    save_memory($conn, $user_id, "chat", $question);
-    save_memory($conn, $user_id, "chat", $calc);
+    save_memory($conn, $user_id, "chat", substr($question,0,200));
+    save_memory($conn, $user_id, "chat", substr($calc,0,200));
 
     echo json_encode([
         "status"=>"success",
@@ -126,7 +134,7 @@ if($calc){
 }
 
 /* =========================
-   STEP 2: MEMORY
+   STEP 2: MEMORY (LIMITED)
 ========================= */
 $memory_text = "";
 
@@ -134,20 +142,19 @@ try{
     $memory_data = get_memory($conn, $user_id, "chat");
 
     if($memory_data && isset($memory_data['memory_value'])){
-        $memory_text = substr($memory_data['memory_value'], 0, 500);
+        $memory_text = substr($memory_data['memory_value'], 0, 300);
     }
 }catch(Exception $e){
     $memory_text = "";
 }
 
 /* =========================
-   STEP 3: PROJECT CONTEXT
+   STEP 3: PROJECT CONTEXT (LIMITED)
 ========================= */
 $project_context = "";
 
 if($project_id > 0){
 
-    // 🔐 Ensure project belongs to user
     $check = $conn->prepare("SELECT id FROM projects WHERE id=? AND user_id=?");
     $check->bind_param("ii", $project_id, $user_id);
     $check->execute();
@@ -159,7 +166,7 @@ if($project_id > 0){
             FROM project_data 
             WHERE project_id=? 
             ORDER BY id DESC 
-            LIMIT 20
+            LIMIT 10
         ");
 
         $stmt->bind_param("i", $project_id);
@@ -168,7 +175,7 @@ if($project_id > 0){
         $result = $stmt->get_result();
 
         while($row = $result->fetch_assoc()){
-            $project_context .= $row['data'] . "\n";
+            $project_context .= substr($row['data'],0,200) . "\n";
         }
     }
 }
@@ -187,18 +194,18 @@ if($knowledge_answer){
     ========================== */
 
     $prompt = "
-You are BuildSmart AI, a construction and engineering expert.
+You are BuildSmart AI, a construction expert.
 
-User Memory:
+Memory:
 $memory_text
 
-Project Context:
+Project:
 $project_context
 
-User Question:
+Question:
 $question
 
-Answer clearly, professionally, and with practical construction guidance.
+Answer clearly and practically.
 ";
 
     try{
@@ -209,12 +216,12 @@ Answer clearly, professionally, and with practical construction guidance.
 }
 
 /* =========================
-   STEP 6: SAVE DATA
+   STEP 6: SAVE (LIMITED)
 ========================= */
 save_chat_history($conn, $user_id, $question, $response);
 
-save_memory($conn, $user_id, "chat", $question);
-save_memory($conn, $user_id, "chat", $response);
+save_memory($conn, $user_id, "chat", substr($question,0,200));
+save_memory($conn, $user_id, "chat", substr($response,0,200));
 
 /* =========================
    OUTPUT
