@@ -1,47 +1,56 @@
 <?php
+require_once "includes/config.php";
+require_once "includes/security.php";
+
 session_start();
-if(!isset($_SESSION['user_id'])){
-    header("Location: login.html");
+
+if(!is_logged_in()){
+    header("Location: login.php");
     exit;
 }
-session_start();
-require_once "includes/security.php";
+
 $csrf = generate_csrf();
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-  <title>BuildSmart AI</title>
-  <link rel="stylesheet" href="style.css">
-<nav><a href="project_dashboard.php">Go to Project Dashboard</a></nav>
+    <title>BuildSmart AI</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div class="container">
-  <h1>🏗️ BuildSmart AI</h1>
+<div class="app">
 
-  <div style="text-align:center; margin-bottom:10px;">
-    <small>Ask about: concrete, foundations, materials, structural design</small>
-  </div>
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+        <h3>🧠 BuildSmart</h3>
 
-  <div id="chat-box"></div>
+        <button onclick="clearChat()">➕ New Chat</button>
 
-  <div>
-    <button onclick="quickAsk('What is concrete mix ratio?')">Concrete Mix</button>
-    <button onclick="quickAsk('Types of foundation?')">Foundation</button>
-  </div>
+        <button onclick="toggleMode()">🌗 Toggle Mode</button>
 
-  <div class="input-area">
-    <input type="text" id="question" placeholder="Ask your question..." />
-    <button onclick="sendQuestion()">Send</button>
-  </div>
+        <button onclick="logout()">🚪 Logout</button>
+    </div>
+
+    <!-- MAIN CHAT -->
+    <div class="main">
+        <h2>🏗️ AI Assistant</h2>
+
+        <div id="chat-box"></div>
+
+        <div class="input-area">
+            <input type="text" id="question" placeholder="Ask anything..." />
+            <button onclick="sendQuestion()">Send</button>
+        </div>
+    </div>
+
 </div>
 
-<button onclick="clearChat()">Clear Screen</button>
+<input type="hidden" id="csrf_token" value="<?php echo $csrf; ?>">
 
 <script>
-const CSRF_TOKEN = "<?php echo $csrf; ?>";
+const CSRF_TOKEN = document.getElementById("csrf_token").value;
 </script>
 
 <script src="chat.js"></script>
