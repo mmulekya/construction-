@@ -12,49 +12,22 @@ require_once "../includes/memory.php";
 
 header("Content-Type: application/json");
 
-// Start session safely
+// Start session
 if(session_status() === PHP_SESSION_NONE){
     session_start();
 }
 
-// 🔐 Clean old login attempts (reduce DB size)
+// Clean old attempts
 clean_old_attempts($conn);
 
-$pdf_context = "";
-
-$stmt = $conn->prepare("
-    SELECT content 
-    FROM pdf_chunks 
-    WHERE content LIKE ? 
-    LIMIT 5
-");
-
-$keyword = "%".$question."%";
-$stmt->bind_param("s", $keyword);
-$stmt->execute();
-
-$result = $stmt->get_result();
-
-while($row = $result->fetch_assoc()){
-    $pdf_context .= substr($row['content'], 0, 300) . "\n";
-}
-
 /* =========================
-   🔐 AUTH (SESSION OR JWT)
+   🔐 AUTH
 ========================= */
+$user_id = $_SESSION['user_id'] ?? null;
 
-$user_id = null;
-
-// Session first
-if(isset($_SESSION['user_id'])){
-    $user_id = $_SESSION['user_id'];
-}
-
-// JWT fallback
 if(!$user_id){
     $headers = getallheaders();
     $token = $headers['Authorization'] ?? '';
-
     if($token){
         $user_id = verify_jwt($token);
     }
@@ -65,12 +38,12 @@ if(!$user_id){
 }
 
 /* =========================
-   🔐 RATE LIMIT (STRICT)
+   🔐 RATE LIMIT
 ========================= */
-check_rate_limit($conn, "ask_ai_" . $user_id, 5, 60); // 5 requests per minute
+check_rate_limit($conn, "ask_ai_" . $user_id, 5, 60);
 
 /* =========================
-   🔐 INPUT (SAFE JSON)
+   🔐 INPUT
 ========================= */
 $input = json_decode(file_get_contents("php://input"), true);
 
@@ -81,9 +54,7 @@ if(!$input){
 /* =========================
    🔐 CSRF
 ========================= */
-$csrf = $input['csrf_token'] ?? '';
-
-if(!verify_csrf_token($csrf)){
+if(!verify_csrf_token($input['csrf_token'] ?? '')){
     exit(json_encode(["error"=>"Invalid CSRF token"]));
 }
 
@@ -102,12 +73,12 @@ if(strlen($question) > 500){
 }
 
 /* =========================
-   🛑 ANTI-BOT DELAY
+   🛑 DELAY
 ========================= */
-usleep(300000); // 0.3 sec
+usleep(300000);
 
 /* =========================
-   🔐 AI DAILY LIMIT (REDUCED)
+   🔐 DAILY LIMIT
 ========================= */
 $stmt = $conn->prepare("
     SELECT requests FROM ai_usage 
@@ -119,16 +90,13 @@ $stmt->execute();
 $usage = $stmt->get_result()->fetch_assoc();
 
 if($usage && $usage['requests'] >= 20){
-    exit(json_encode([
-        "error"=>"Daily AI limit reached (20 requests)"
-    ]));
+    exit(json_encode(["error"=>"Daily AI limit reached"]));
 }
 
-// Update usage safely
 $stmt = $conn->prepare("
     INSERT INTO ai_usage (user_id, requests, last_request)
-    VALUES (?, 1, CURDATE())
-    ON DUPLICATE KEY UPDATE requests = requests + 1
+    VALUES (?,1,CURDATE())
+    ON DUPLICATE KEY UPDATE requests=requests+1
 ");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
@@ -141,9 +109,6 @@ $calc = calculate_engineering($question);
 if($calc){
     save_chat_history($conn, $user_id, $question, $calc);
 
-    save_memory($conn, $user_id, "chat", substr($question,0,200));
-    save_memory($conn, $user_id, "chat", substr($calc,0,200));
-
     echo json_encode([
         "status"=>"success",
         "answer"=>$calc,
@@ -153,54 +118,44 @@ if($calc){
 }
 
 /* =========================
-   STEP 2: MEMORY (LIMITED)
+   STEP 2: MEMORY
 ========================= */
 $memory_text = "";
 
 try{
-    $memory_data = get_memory($conn, $user_id, "chat");
-
-    if($memory_data && isset($memory_data['memory_value'])){
-        $memory_text = substr($memory_data['memory_value'], 0, 300);
+    $mem = get_memory($conn, $user_id, "chat");
+    if($mem && isset($mem['memory_value'])){
+        $memory_text = substr($mem['memory_value'], 0, 300);
     }
-}catch(Exception $e){
-    $memory_text = "";
-}
+}catch(Exception $e){}
 
 /* =========================
-   STEP 3: PROJECT CONTEXT (LIMITED)
+   STEP 3: PROJECT CONTEXT
 ========================= */
 $project_context = "";
 
 if($project_id > 0){
-
     $check = $conn->prepare("SELECT id FROM projects WHERE id=? AND user_id=?");
     $check->bind_param("ii", $project_id, $user_id);
     $check->execute();
 
     if($check->get_result()->num_rows > 0){
-
         $stmt = $conn->prepare("
-            SELECT data 
-            FROM project_data 
-            WHERE project_id=? 
-            ORDER BY id DESC 
-            LIMIT 10
+            SELECT data FROM project_data 
+            WHERE project_id=? ORDER BY id DESC LIMIT 10
         ");
-
         $stmt->bind_param("i", $project_id);
         $stmt->execute();
 
-        $result = $stmt->get_result();
-
-        while($row = $result->fetch_assoc()){
-            $project_context .= substr($row['data'],0,200) . "\n";
+        $res = $stmt->get_result();
+        while($row = $res->fetch_assoc()){
+            $project_context .= substr($row['data'],0,200)."\n";
         }
     }
 }
 
 /* =========================
-   STEP 4: KNOWLEDGE SEARCH
+   STEP 4: KNOWLEDGE
 ========================= */
 $knowledge_answer = get_knowledge_answer($conn, $question);
 
@@ -209,7 +164,80 @@ if($knowledge_answer){
 } else {
 
     /* =========================
-       STEP 5: AI FALLBACK
+       STEP 5: SEMANTIC PDF SEARCH
+    ========================== */
+
+    function get_embedding($text){
+        $apiKey = getenv("OPENAI_API_KEY");
+
+        $data = [
+            "input"=>$text,
+            "model"=>"text-embedding-3-small"
+        ];
+
+        $ch = curl_init("https://api.openai.com/v1/embeddings");
+
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer ".$apiKey,
+            "Content-Type: application/json"
+        ]);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+
+        $res = curl_exec($ch);
+        curl_close($ch);
+
+        $json = json_decode($res, true);
+
+        return $json['data'][0]['embedding'] ?? [];
+    }
+
+    function cosine($a,$b){
+        $dot=0;$magA=0;$magB=0;
+        for($i=0;$i<count($a);$i++){
+            $dot+=$a[$i]*$b[$i];
+            $magA+=$a[$i]*$a[$i];
+            $magB+=$b[$i]*$b[$i];
+        }
+        return $dot/(sqrt($magA)*sqrt($magB));
+    }
+
+    $pdf_context = "";
+
+    try{
+        $q_embed = get_embedding($question);
+
+        $res = $conn->query("SELECT content, embedding FROM pdf_chunks");
+
+        $scores = [];
+
+        while($row = $res->fetch_assoc()){
+            $emb = json_decode($row['embedding'], true);
+            if(!$emb) continue;
+
+            $score = cosine($q_embed, $emb);
+
+            $scores[] = [
+                "content"=>$row['content'],
+                "score"=>$score
+            ];
+        }
+
+        usort($scores, fn($a,$b)=>$b['score'] <=> $a['score']);
+
+        $top = array_slice($scores,0,3);
+
+        foreach($top as $t){
+            $pdf_context .= substr($t['content'],0,300)."\n";
+        }
+
+    }catch(Exception $e){
+        $pdf_context = "";
+    }
+
+    /* =========================
+       STEP 6: AI
     ========================== */
 
     $prompt = "
@@ -218,33 +246,29 @@ You are BuildSmart AI, a construction expert.
 Memory:
 $memory_text
 
-Project Context:
+Project:
 $project_context
 
-PDF Knowledge:
+PDF Context:
 $pdf_context
 
 Question:
 $question
 
-Answer clearly using the provided PDF and project data when relevant.
-";
+Answer clearly and practically.
 ";
 
     try{
         $response = gpt_request($prompt);
     }catch(Exception $e){
-        $response = "AI service temporarily unavailable.";
+        $response = "AI service unavailable.";
     }
 }
 
 /* =========================
-   STEP 6: SAVE (LIMITED)
+   SAVE
 ========================= */
 save_chat_history($conn, $user_id, $question, $response);
-
-save_memory($conn, $user_id, "chat", substr($question,0,200));
-save_memory($conn, $user_id, "chat", substr($response,0,200));
 
 /* =========================
    OUTPUT
