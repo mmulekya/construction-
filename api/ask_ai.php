@@ -164,44 +164,8 @@ if($knowledge_answer){
 } else {
 
     /* =========================
-       STEP 5: SEMANTIC PDF SEARCH
+       STEP 5: HYBRID PDF SEARCH
     ========================== */
-
-    function get_embedding($text){
-        $apiKey = getenv("OPENAI_API_KEY");
-
-        $data = [
-            "input"=>$text,
-            "model"=>"text-embedding-3-small"
-        ];
-
-        $ch = curl_init("https://api.openai.com/v1/embeddings");
-
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer ".$apiKey,
-            "Content-Type: application/json"
-        ]);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-
-        $res = curl_exec($ch);
-        curl_close($ch);
-
-        $json = json_decode($res, true);
-
-        return $json['data'][0]['embedding'] ?? [];
-    }
-
-    function cosine($a,$b){
-        $dot=0;$magA=0;$magB=0;
-        for($i=0;$i<count($a);$i++){
-            $dot+=$a[$i]*$b[$i];
-            $magA+=$a[$i]*$a[$i];
-            $magB+=$b[$i]*$b[$i];
-        }
-        return $dot/(sqrt($magA)*sqrt($magB));
-    }
 
     $pdf_context = "";
 
@@ -216,7 +180,10 @@ if($knowledge_answer){
             $emb = json_decode($row['embedding'], true);
             if(!$emb) continue;
 
-            $score = cosine($q_embed, $emb);
+            $semantic = cosine_similarity($q_embed, $emb);
+            $keyword = stripos($row['content'], $question) !== false ? 1 : 0;
+
+            $score = ($semantic * 0.7) + ($keyword * 0.3);
 
             $scores[] = [
                 "content"=>$row['content'],
@@ -226,9 +193,14 @@ if($knowledge_answer){
 
         usort($scores, fn($a,$b)=>$b['score'] <=> $a['score']);
 
-        $top = array_slice($scores,0,3);
+        $top = array_slice($scores,0,5);
+
+        $max_chars = 1500;
 
         foreach($top as $t){
+            if(strlen($pdf_context) + strlen($t['content']) > $max_chars){
+                break;
+            }
             $pdf_context .= substr($t['content'],0,300)."\n";
         }
 
@@ -249,7 +221,7 @@ $memory_text
 Project:
 $project_context
 
-PDF Context:
+PDF Knowledge:
 $pdf_context
 
 Question:
