@@ -5,87 +5,122 @@ require_once "../includes/database.php";
 require_once "../includes/embedding.php";
 require_once "../includes/security.php";
 
+header("Content-Type: application/json");
+
+// Start session safely
+if(session_status() === PHP_SESSION_NONE){
+    session_start();
+}
+
 require_login();
 
-// Permission check
+// 🔐 Permission check
 if(!has_permission($conn, $_SESSION['user_id'], 'upload_pdf')){
     exit(json_encode(["error"=>"Access denied"]));
 }
 
-// File check
+// 🔐 File check
 if(!isset($_FILES['pdf'])){
     exit(json_encode(["error"=>"No file uploaded"]));
 }
 
 $pdf_file = $_FILES['pdf'];
 
-// Strict validation
+// 🔐 Upload validation
 if($pdf_file['error'] !== UPLOAD_ERR_OK){
     exit(json_encode(["error"=>"Upload error"]));
 }
 
 if(mime_content_type($pdf_file['tmp_name']) !== 'application/pdf'){
-    exit(json_encode(["error"=>"Invalid file type"]));
+    exit(json_encode(["error"=>"Invalid file type"]);
 }
 
-// 🔥 LIMIT SIZE (SAFE FOR FREE HOSTING)
+// 🔥 LIMIT SIZE (FREE HOST SAFE)
 if($pdf_file['size'] > 2 * 1024 * 1024){
     exit(json_encode(["error"=>"Max 2MB allowed"]));
 }
 
-// Safe filename
-$random_name = bin2hex(random_bytes(12)).'.pdf';
-$upload_path = __DIR__.'/../uploads/pdfs/'.$random_name;
+// 🔐 Safe filename
+$random_name = bin2hex(random_bytes(12)) . '.pdf';
+$upload_path = __DIR__ . '/../uploads/pdfs/' . $random_name;
 
 if(!move_uploaded_file($pdf_file['tmp_name'], $upload_path)){
     exit(json_encode(["error"=>"Upload failed"]));
 }
 
+/* =========================
+   📄 TEXT INPUT (SAFE MODE)
+========================= */
 
-// ❌ REMOVE shell_exec (NOT ALLOWED)
-// 👉 Instead: store metadata OR pre-process externally
+// ❗ IMPORTANT:
+// No shell_exec allowed on free hosting
+// So we expect TEXT instead of extracting PDF server-side
 
-$text = ""; // Placeholder (you can upload extracted text instead)
+$text = trim($_POST['extracted_text'] ?? '');
 
+if(empty($text)){
+    exit(json_encode([
+        "error"=>"No text provided. Extract PDF text before upload."
+    ]));
+}
 
-// 🔥 LIMIT CHUNKS (VERY IMPORTANT)
+/* =========================
+   ✂️ CLEAN + SPLIT TEXT
+========================= */
+
+// Clean text
+$text = preg_replace('/\s+/', ' ', $text);
+
+// Split into chunks
 $chunks = str_split($text, 500);
-$limit = 20; // max chunks per upload
 
+// 🔥 LIMIT chunks (protect server)
+$limit = 20;
 $count = 0;
+
+/* =========================
+   🧠 STORE WITH EMBEDDINGS
+========================= */
 
 foreach($chunks as $chunk){
 
     if($count >= $limit) break;
 
-    if(trim($chunk) == '') continue;
+    $chunk = trim($chunk);
+    if(strlen($chunk) < 20) continue;
 
-    // Safe embedding (optional)
+    // 🔐 Generate embedding (safe API call)
     $embedding = generate_embedding($chunk);
-
-    $source_type = 'pdf';
+    $embedding_json = json_encode($embedding);
 
     $stmt = $conn->prepare("
-        INSERT INTO knowledge_base (title, content, embedding, source_type)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO pdf_chunks (content, embedding, pdf_name, created_at)
+        VALUES (?, ?, ?, NOW())
     ");
 
-    $stmt->bind_param("ssss", $pdf_file['name'], $chunk, $embedding, $source_type);
+    $stmt->bind_param("sss", $chunk, $embedding_json, $pdf_file['name']);
     $stmt->execute();
 
     $count++;
 }
 
+/* =========================
+   🔐 LOGGING
+========================= */
 
-// Logging
 log_action(
     $conn,
     "PDF_UPLOAD",
-    "PDF stored safely: ".$pdf_file['name'],
+    "PDF processed: " . $pdf_file['name'] . " (chunks: $count)",
     $_SESSION['user_id']
 );
 
+/* =========================
+   ✅ RESPONSE
+========================= */
+
 echo json_encode([
     "success"=>true,
-    "message"=>"PDF uploaded (processing limited for safety)"
+    "message"=>"PDF uploaded & processed successfully",
+    "chunks_saved"=>$count
 ]);
