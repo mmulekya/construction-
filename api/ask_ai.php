@@ -199,13 +199,17 @@ You are BuildSmart AI, a construction expert.
 Memory:
 $memory_text
 
-Project:
+Project Context:
 $project_context
+
+PDF Knowledge:
+$pdf_context
 
 Question:
 $question
 
-Answer clearly and practically.
+Answer clearly using the provided PDF and project data when relevant.
+";
 ";
 
     try{
