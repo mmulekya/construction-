@@ -20,6 +20,25 @@ if(session_status() === PHP_SESSION_NONE){
 // 🔐 Clean old login attempts (reduce DB size)
 clean_old_attempts($conn);
 
+$pdf_context = "";
+
+$stmt = $conn->prepare("
+    SELECT content 
+    FROM pdf_chunks 
+    WHERE content LIKE ? 
+    LIMIT 5
+");
+
+$keyword = "%".$question."%";
+$stmt->bind_param("s", $keyword);
+$stmt->execute();
+
+$result = $stmt->get_result();
+
+while($row = $result->fetch_assoc()){
+    $pdf_context .= substr($row['content'], 0, 300) . "\n";
+}
+
 /* =========================
    🔐 AUTH (SESSION OR JWT)
 ========================= */
