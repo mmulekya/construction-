@@ -1,7 +1,7 @@
 <?php
 
 require_once "database.php";
-require_once "gpt_ai.php"; // for embeddings
+require_once "gpt_ai.php";
 
 /* =========================
    CLEAN INPUT
@@ -17,7 +17,7 @@ function clean_query($query){
 ========================= */
 function cosine_similarity($a, $b){
 
-    if(count($a) !== count($b)) return 0;
+    if(!$a || !$b || count($a) !== count($b)) return 0;
 
     $dot = 0; 
     $magA = 0; 
@@ -32,6 +32,40 @@ function cosine_similarity($a, $b){
     if($magA == 0 || $magB == 0) return 0;
 
     return $dot / (sqrt($magA) * sqrt($magB));
+}
+
+/* =========================
+   EMBEDDING CACHE (IMPORTANT)
+========================= */
+function get_cached_embedding($conn, $text){
+
+    $stmt = $conn->prepare("
+        SELECT embedding FROM query_cache 
+        WHERE question=? LIMIT 1
+    ");
+    $stmt->bind_param("s", $text);
+    $stmt->execute();
+
+    $res = $stmt->get_result()->fetch_assoc();
+
+    if($res){
+        return json_decode($res['embedding'], true);
+    }
+
+    $embedding = get_embedding($text);
+
+    if(!empty($embedding)){
+        $json = json_encode($embedding);
+
+        $stmt = $conn->prepare("
+            INSERT INTO query_cache (question, embedding, created_at)
+            VALUES (?, ?, NOW())
+        ");
+        $stmt->bind_param("ss", $text, $json);
+        $stmt->execute();
+    }
+
+    return $embedding;
 }
 
 /* =========================
@@ -62,7 +96,7 @@ function keyword_search($conn, $query){
     while($row = $res->fetch_assoc()){
         $data[] = [
             "content"=>$row['content'],
-            "score"=>0.3 // base score
+            "score"=>0.4 // slightly higher weight
         ];
     }
 
@@ -77,14 +111,14 @@ function semantic_pdf_search($conn, $question){
     $question = clean_query($question);
     if(empty($question)) return [];
 
-    // Generate embedding
-    $question_embedding = get_embedding($question);
-
+    // Cached embedding
+    $question_embedding = get_cached_embedding($conn, $question);
     if(empty($question_embedding)) return [];
 
     $stmt = $conn->prepare("
         SELECT content, embedding 
         FROM pdf_chunks
+        ORDER BY id DESC
         LIMIT 200
     ");
 
@@ -103,7 +137,10 @@ function semantic_pdf_search($conn, $question){
         // keyword boost
         $keyword = stripos($row['content'], $question) !== false ? 1 : 0;
 
-        $score = ($semantic * 0.7) + ($keyword * 0.3);
+        // weighted score
+        $score = ($semantic * 0.75) + ($keyword * 0.25);
+
+        if($score < 0.2) continue; // ignore weak matches
 
         $scores[] = [
             "content"=>$row['content'],
@@ -111,10 +148,7 @@ function semantic_pdf_search($conn, $question){
         ];
     }
 
-    // sort best first
-    usort($scores, function($a, $b){
-        return $b['score'] <=> $a['score'];
-    });
+    usort($scores, fn($a,$b)=> $b['score'] <=> $a['score']);
 
     return array_slice($scores, 0, 5);
 }
@@ -129,13 +163,13 @@ function get_knowledge($conn, $query){
 
     $results = [];
 
-    // 🔹 1. Keyword search (fast fallback)
+    // 🔹 1. Keyword search
     $keyword = keyword_search($conn, $query);
     if(!empty($keyword)){
         $results = array_merge($results, $keyword);
     }
 
-    // 🔹 2. Semantic PDF search (smart)
+    // 🔹 2. Semantic PDF search
     $semantic = semantic_pdf_search($conn, $query);
     if(!empty($semantic)){
         $results = array_merge($results, $semantic);
@@ -143,12 +177,10 @@ function get_knowledge($conn, $query){
 
     if(empty($results)) return null;
 
-    // 🔹 Sort combined results
-    usort($results, function($a, $b){
-        return $b['score'] <=> $a['score'];
-    });
+    // Sort final results
+    usort($results, fn($a,$b)=> $b['score'] <=> $a['score']);
 
-    // 🔹 Build final context (limit size)
+    // Build final context
     $final = "";
     $max_chars = 1500;
 
