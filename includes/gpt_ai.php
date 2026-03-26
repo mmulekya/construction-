@@ -6,7 +6,6 @@ require_once "config.php";
    🔐 GET API KEY SAFELY
 ========================= */
 function get_openai_key(){
-
     $key = getenv('OPENAI_API_KEY');
 
     if(!$key && defined('OPENAI_API_KEY')){
@@ -17,7 +16,7 @@ function get_openai_key(){
 }
 
 /* =========================
-   🤖 GPT CHAT (FINAL SAFE)
+   🤖 GPT CHAT (SIMPLE PROMPT)
 ========================= */
 function call_gpt($prompt){
 
@@ -33,23 +32,54 @@ function call_gpt($prompt){
         return "Invalid request";
     }
 
-    // Limit prompt size (important for cost + speed)
+    // Limit prompt size (cost control)
     $prompt = substr($prompt, 0, 2000);
+
+    $messages = [
+        [
+            "role" => "system",
+            "content" => "You are BuildSmart AI, an expert in construction, engineering, materials, and project management. Provide clear and practical answers."
+        ],
+        [
+            "role" => "user",
+            "content" => $prompt
+        ]
+    ];
+
+    return gpt_request($messages);
+}
+
+/* =========================
+   🤖 GPT CHAT WITH MEMORY
+========================= */
+function gpt_request_with_history($messages){
+
+    $apiKey = get_openai_key();
+
+    if(empty($apiKey)){
+        return "AI configuration error";
+    }
+
+    // Limit conversation length (IMPORTANT)
+    if(count($messages) > 10){
+        $messages = array_slice($messages, -10);
+    }
+
+    return gpt_request($messages);
+}
+
+/* =========================
+   🔧 CORE GPT REQUEST
+========================= */
+function gpt_request($messages){
+
+    $apiKey = get_openai_key();
 
     $data = [
         "model" => "gpt-4o-mini",
-        "messages" => [
-            [
-                "role" => "system",
-                "content" => "You are BuildSmart AI, an expert in construction, engineering, materials, and project management. Provide clear, practical, and accurate answers."
-            ],
-            [
-                "role" => "user",
-                "content" => $prompt
-            ]
-        ],
+        "messages" => $messages,
         "temperature" => 0.3,
-        "max_tokens" => 300 // reduced for performance
+        "max_tokens" => 250
     ];
 
     $ch = curl_init("https://api.openai.com/v1/chat/completions");
@@ -62,7 +92,7 @@ function call_gpt($prompt){
             "Content-Type: application/json",
             "Authorization: Bearer " . $apiKey
         ],
-        CURLOPT_TIMEOUT => 10 // lower timeout for free hosting
+        CURLOPT_TIMEOUT => 10
     ]);
 
     $response = curl_exec($ch);
@@ -105,7 +135,7 @@ function get_embedding($text){
         return [];
     }
 
-    // Limit size (VERY IMPORTANT for cost)
+    // Limit size (IMPORTANT)
     $text = substr($text, 0, 800);
 
     $data = [
@@ -142,15 +172,11 @@ function get_embedding($text){
 
     $res = json_decode($response, true);
 
-    if(!isset($res['data'][0]['embedding'])){
-        return [];
-    }
-
-    return $res['data'][0]['embedding'];
+    return $res['data'][0]['embedding'] ?? [];
 }
 
 /* =========================
-   ⚡ EMBEDDING CACHE (OPTIONAL)
+   ⚡ EMBEDDING CACHE
 ========================= */
 function get_cached_embedding($conn, $text){
 
@@ -174,7 +200,7 @@ function get_cached_embedding($conn, $text){
         return json_decode($res['embedding'], true);
     }
 
-    // Generate new embedding
+    // Generate embedding
     $embedding = get_embedding($text);
 
     if(!empty($embedding)){
