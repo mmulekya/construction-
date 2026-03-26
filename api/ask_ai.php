@@ -12,12 +12,12 @@ require_once "../includes/memory.php";
 
 header("Content-Type: application/json");
 
-// Start session
+// Session
 if(session_status() === PHP_SESSION_NONE){
     session_start();
 }
 
-// Clean old attempts
+// Cleanup old logs
 clean_old_attempts($conn);
 
 /* =========================
@@ -28,6 +28,7 @@ $user_id = $_SESSION['user_id'] ?? null;
 if(!$user_id){
     $headers = getallheaders();
     $token = $headers['Authorization'] ?? '';
+
     if($token){
         $user_id = verify_jwt($token);
     }
@@ -64,8 +65,8 @@ if(!verify_csrf_token($input['csrf_token'] ?? '')){
 $question = trim($input['question'] ?? '');
 $project_id = intval($input['project_id'] ?? 0);
 
-if(strlen($question) < 3){
-    exit(json_encode(["error"=>"Invalid input"]));
+if(strlen($question) < 5){
+    exit(json_encode(["error"=>"Ask a more detailed question"]));
 }
 
 if(strlen($question) > 500){
@@ -73,9 +74,9 @@ if(strlen($question) > 500){
 }
 
 /* =========================
-   🛑 DELAY
+   🛑 SMALL DELAY
 ========================= */
-usleep(300000);
+usleep(200000);
 
 /* =========================
    🔐 DAILY LIMIT
@@ -93,6 +94,7 @@ if($usage && $usage['requests'] >= 20){
     exit(json_encode(["error"=>"Daily AI limit reached"]));
 }
 
+// Update usage
 $stmt = $conn->prepare("
     INSERT INTO ai_usage (user_id, requests, last_request)
     VALUES (?,1,CURDATE())
@@ -135,19 +137,25 @@ try{
 $project_context = "";
 
 if($project_id > 0){
+
     $check = $conn->prepare("SELECT id FROM projects WHERE id=? AND user_id=?");
     $check->bind_param("ii", $project_id, $user_id);
     $check->execute();
 
     if($check->get_result()->num_rows > 0){
+
         $stmt = $conn->prepare("
             SELECT data FROM project_data 
-            WHERE project_id=? ORDER BY id DESC LIMIT 10
+            WHERE project_id=? 
+            ORDER BY id DESC 
+            LIMIT 10
         ");
+
         $stmt->bind_param("i", $project_id);
         $stmt->execute();
 
         $res = $stmt->get_result();
+
         while($row = $res->fetch_assoc()){
             $project_context .= substr($row['data'],0,200)."\n";
         }
@@ -161,22 +169,32 @@ $knowledge_answer = get_knowledge_answer($conn, $question);
 
 if($knowledge_answer){
     $response = $knowledge_answer;
-} else {
+}
+else{
 
     /* =========================
-       STEP 5: HYBRID PDF SEARCH
+       STEP 5: HYBRID PDF SEARCH (OPTIMIZED)
     ========================== */
 
     $pdf_context = "";
 
     try{
-        $q_embed = get_embedding($question);
 
-        $res = $conn->query("SELECT content, embedding FROM pdf_chunks");
+        // Use cached embedding
+        $q_embed = get_cached_embedding($conn, $question);
+
+        // LIMIT search (VERY IMPORTANT)
+        $res = $conn->query("
+            SELECT content, embedding 
+            FROM pdf_chunks 
+            ORDER BY id DESC 
+            LIMIT 200
+        ");
 
         $scores = [];
 
         while($row = $res->fetch_assoc()){
+
             $emb = json_decode($row['embedding'], true);
             if(!$emb) continue;
 
@@ -198,9 +216,11 @@ if($knowledge_answer){
         $max_chars = 1500;
 
         foreach($top as $t){
+
             if(strlen($pdf_context) + strlen($t['content']) > $max_chars){
                 break;
             }
+
             $pdf_context .= substr($t['content'],0,300)."\n";
         }
 
