@@ -10,30 +10,30 @@ header("Content-Type: application/json");
 // 🔐 Require login
 require_login();
 
-// 🔐 Prevent abuse (basic rate limit per user)
+// 🔐 Basic rate limit
 if(is_rate_limited($conn, $_SESSION['user_id'])){
     exit(json_encode([
-        "error"=>"Too many requests"
+        "error" => "Too many requests"
     ]));
 }
 
-// 🔐 Get user safely
 $user_id = intval($_SESSION['user_id']);
 
-// 🔐 Fetch limited history (already capped in history.php)
-$result = get_chat_history($conn, $user_id);
+// 🧠 Get conversation messages (ChatGPT style)
+$messages = get_recent_messages($conn, $user_id, 20);
 
+// 🔐 Clean output format
 $history = [];
 
-while($row = $result->fetch_assoc()){
+foreach($messages as $msg){
+
     $history[] = [
-        "message" => $row['message'],
-        "response" => $row['response'],
-        "created_at" => $row['created_at']
+        "role" => $msg['role'], // user / ai
+        "message" => $msg['message']
     ];
 }
 
-// 🔐 Clean output
+// 🔐 Output
 echo json_encode([
     "success" => true,
     "history" => $history
