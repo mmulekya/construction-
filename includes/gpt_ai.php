@@ -2,12 +2,11 @@
 
 require_once "config.php";
 
-/**
- * 🔐 Get API Key safely
- */
+/* =========================
+   🔐 GET API KEY SAFELY
+========================= */
 function get_openai_key(){
 
-    // Try ENV first
     $key = getenv('OPENAI_API_KEY');
 
     if(!$key && defined('OPENAI_API_KEY')){
@@ -17,29 +16,32 @@ function get_openai_key(){
     return $key;
 }
 
-/**
- * 🤖 CALL GPT (CHAT)
- */
+/* =========================
+   🤖 GPT CHAT (FINAL SAFE)
+========================= */
 function call_gpt($prompt){
 
     $apiKey = get_openai_key();
 
     if(empty($apiKey)){
-        return "AI configuration error (API key missing)";
+        return "AI configuration error";
     }
 
     $prompt = trim($prompt);
 
-    if(empty($prompt)){
-        return "Empty prompt";
+    if(strlen($prompt) < 3){
+        return "Invalid request";
     }
+
+    // Limit prompt size (important for cost + speed)
+    $prompt = substr($prompt, 0, 2000);
 
     $data = [
         "model" => "gpt-4o-mini",
         "messages" => [
             [
                 "role" => "system",
-                "content" => "You are BuildSmart AI, an expert in construction, engineering, materials, and project management. Give clear and practical answers."
+                "content" => "You are BuildSmart AI, an expert in construction, engineering, materials, and project management. Provide clear, practical, and accurate answers."
             ],
             [
                 "role" => "user",
@@ -47,7 +49,7 @@ function call_gpt($prompt){
             ]
         ],
         "temperature" => 0.3,
-        "max_tokens" => 500
+        "max_tokens" => 300 // reduced for performance
     ];
 
     $ch = curl_init("https://api.openai.com/v1/chat/completions");
@@ -60,12 +62,11 @@ function call_gpt($prompt){
             "Content-Type: application/json",
             "Authorization: Bearer " . $apiKey
         ],
-        CURLOPT_TIMEOUT => 15 // safer for free hosting
+        CURLOPT_TIMEOUT => 10 // lower timeout for free hosting
     ]);
 
     $response = curl_exec($ch);
 
-    // CURL error
     if(curl_errno($ch)){
         curl_close($ch);
         return "AI connection error";
@@ -81,15 +82,15 @@ function call_gpt($prompt){
     $res = json_decode($response, true);
 
     if(!isset($res['choices'][0]['message']['content'])){
-        return "Invalid AI response";
+        return "AI returned invalid response";
     }
 
     return trim($res['choices'][0]['message']['content']);
 }
 
-/**
- * 🧠 GET EMBEDDING (FOR SEMANTIC SEARCH)
- */
+/* =========================
+   🧠 EMBEDDING (SAFE + FAST)
+========================= */
 function get_embedding($text){
 
     $apiKey = get_openai_key();
@@ -100,12 +101,15 @@ function get_embedding($text){
 
     $text = trim($text);
 
-    if(empty($text)){
+    if(strlen($text) < 3){
         return [];
     }
 
+    // Limit size (VERY IMPORTANT for cost)
+    $text = substr($text, 0, 800);
+
     $data = [
-        "input" => substr($text, 0, 1000), // limit to reduce cost
+        "input" => $text,
         "model" => "text-embedding-3-small"
     ];
 
@@ -119,7 +123,7 @@ function get_embedding($text){
             "Content-Type: application/json",
             "Authorization: Bearer " . $apiKey
         ],
-        CURLOPT_TIMEOUT => 15
+        CURLOPT_TIMEOUT => 10
     ]);
 
     $response = curl_exec($ch);
@@ -143,4 +147,46 @@ function get_embedding($text){
     }
 
     return $res['data'][0]['embedding'];
+}
+
+/* =========================
+   ⚡ EMBEDDING CACHE (OPTIONAL)
+========================= */
+function get_cached_embedding($conn, $text){
+
+    $text = trim($text);
+
+    if(strlen($text) < 3){
+        return [];
+    }
+
+    // Check cache
+    $stmt = $conn->prepare("
+        SELECT embedding FROM query_cache 
+        WHERE question=? LIMIT 1
+    ");
+    $stmt->bind_param("s", $text);
+    $stmt->execute();
+
+    $res = $stmt->get_result()->fetch_assoc();
+
+    if($res){
+        return json_decode($res['embedding'], true);
+    }
+
+    // Generate new embedding
+    $embedding = get_embedding($text);
+
+    if(!empty($embedding)){
+        $json = json_encode($embedding);
+
+        $stmt = $conn->prepare("
+            INSERT INTO query_cache (question, embedding, created_at)
+            VALUES (?, ?, NOW())
+        ");
+        $stmt->bind_param("ss", $text, $json);
+        $stmt->execute();
+    }
+
+    return $embedding;
 }
