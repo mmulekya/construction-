@@ -8,17 +8,14 @@ require_once "../includes/knowledge.php";
 require_once "../includes/history.php";
 require_once "../includes/gpt_ai.php";
 require_once "../includes/calculator.php";
-require_once "../includes/memory.php";
+require_once "../includes/project.php";
 
 header("Content-Type: application/json");
 
-// Session
+// Start session
 if(session_status() === PHP_SESSION_NONE){
     session_start();
 }
-
-// Cleanup old logs
-clean_old_attempts($conn);
 
 /* =========================
    🔐 AUTH
@@ -109,7 +106,8 @@ $stmt->execute();
 $calc = calculate_engineering($question);
 
 if($calc){
-    save_chat_history($conn, $user_id, $question, $calc);
+    save_message($conn, $user_id, "user", $question);
+    save_message($conn, $user_id, "ai", $calc);
 
     echo json_encode([
         "status"=>"success",
@@ -120,16 +118,9 @@ if($calc){
 }
 
 /* =========================
-   STEP 2: MEMORY
+   STEP 2: CHAT MEMORY (CONTEXT)
 ========================= */
-$memory_text = "";
-
-try{
-    $mem = get_memory($conn, $user_id, "chat");
-    if($mem && isset($mem['memory_value'])){
-        $memory_text = substr($mem['memory_value'], 0, 300);
-    }
-}catch(Exception $e){}
+$messages = get_recent_messages($conn, $user_id, 8);
 
 /* =========================
    STEP 3: PROJECT CONTEXT
@@ -165,102 +156,112 @@ if($project_id > 0){
 /* =========================
    STEP 4: KNOWLEDGE
 ========================= */
-$knowledge_answer = get_knowledge_answer($conn, $question);
+$knowledge = search_knowledge($conn, $question);
 
-if($knowledge_answer){
-    $response = $knowledge_answer;
-}
-else{
+if($knowledge && $knowledge->num_rows > 0){
+    $row = $knowledge->fetch_assoc();
 
-    /* =========================
-       STEP 5: HYBRID PDF SEARCH (OPTIMIZED)
-    ========================== */
+    $response = $row['content'];
 
-    $pdf_context = "";
+    save_message($conn, $user_id, "user", $question);
+    save_message($conn, $user_id, "ai", $response);
 
-    try{
-
-        // Use cached embedding
-        $q_embed = get_cached_embedding($conn, $question);
-
-        // LIMIT search (VERY IMPORTANT)
-        $res = $conn->query("
-            SELECT content, embedding 
-            FROM pdf_chunks 
-            ORDER BY id DESC 
-            LIMIT 200
-        ");
-
-        $scores = [];
-
-        while($row = $res->fetch_assoc()){
-
-            $emb = json_decode($row['embedding'], true);
-            if(!$emb) continue;
-
-            $semantic = cosine_similarity($q_embed, $emb);
-            $keyword = stripos($row['content'], $question) !== false ? 1 : 0;
-
-            $score = ($semantic * 0.7) + ($keyword * 0.3);
-
-            $scores[] = [
-                "content"=>$row['content'],
-                "score"=>$score
-            ];
-        }
-
-        usort($scores, fn($a,$b)=>$b['score'] <=> $a['score']);
-
-        $top = array_slice($scores,0,5);
-
-        $max_chars = 1500;
-
-        foreach($top as $t){
-
-            if(strlen($pdf_context) + strlen($t['content']) > $max_chars){
-                break;
-            }
-
-            $pdf_context .= substr($t['content'],0,300)."\n";
-        }
-
-    }catch(Exception $e){
-        $pdf_context = "";
-    }
-
-    /* =========================
-       STEP 6: AI
-    ========================== */
-
-    $prompt = "
-You are BuildSmart AI, a construction expert.
-
-Memory:
-$memory_text
-
-Project:
-$project_context
-
-PDF Knowledge:
-$pdf_context
-
-Question:
-$question
-
-Answer clearly and practically.
-";
-
-    try{
-        $response = gpt_request($prompt);
-    }catch(Exception $e){
-        $response = "AI service unavailable.";
-    }
+    echo json_encode([
+        "status"=>"success",
+        "answer"=>$response,
+        "source"=>"knowledge"
+    ]);
+    exit;
 }
 
 /* =========================
-   SAVE
+   STEP 5: PDF SEMANTIC SEARCH
 ========================= */
-save_chat_history($conn, $user_id, $question, $response);
+$pdf_context = "";
+
+try{
+
+    $q_embed = get_cached_embedding($conn, $question);
+
+    $res = $conn->query("
+        SELECT content, embedding 
+        FROM pdf_chunks 
+        ORDER BY id DESC 
+        LIMIT 200
+    ");
+
+    $scores = [];
+
+    while($row = $res->fetch_assoc()){
+
+        $emb = json_decode($row['embedding'], true);
+        if(!$emb) continue;
+
+        $semantic = cosine_similarity($q_embed, $emb);
+        $keyword = stripos($row['content'], $question) !== false ? 1 : 0;
+
+        $score = ($semantic * 0.7) + ($keyword * 0.3);
+
+        $scores[] = [
+            "content"=>$row['content'],
+            "score"=>$score
+        ];
+    }
+
+    usort($scores, fn($a,$b)=>$b['score'] <=> $a['score']);
+
+    $top = array_slice($scores,0,5);
+
+    $max_chars = 1500;
+
+    foreach($top as $t){
+
+        if(strlen($pdf_context) + strlen($t['content']) > $max_chars){
+            break;
+        }
+
+        $pdf_context .= substr($t['content'],0,300)."\n";
+    }
+
+}catch(Exception $e){
+    $pdf_context = "";
+}
+
+/* =========================
+   STEP 6: GPT WITH CONTEXT
+========================= */
+$chat_history = [];
+
+foreach($messages as $msg){
+    $chat_history[] = [
+        "role" => $msg['role'] === 'ai' ? "assistant" : "user",
+        "content" => $msg['message']
+    ];
+}
+
+// Add system context
+$chat_history[] = [
+    "role" => "system",
+    "content" => "Project:\n".$project_context."\nPDF:\n".$pdf_context
+];
+
+// Add current question
+$chat_history[] = [
+    "role" => "user",
+    "content" => $question
+];
+
+try{
+    $response = gpt_request_with_history($chat_history);
+}catch(Exception $e){
+    $response = "AI service unavailable.";
+}
+
+/* =========================
+   SAVE CONVERSATION
+========================= */
+save_message($conn, $user_id, "user", $question);
+save_message($conn, $user_id, "ai", $response);
 
 /* =========================
    OUTPUT
