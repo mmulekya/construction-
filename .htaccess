@@ -38,8 +38,13 @@ RewriteRule ^uploads/.*$ - [F,L]
 </IfModule>
 
 # =========================
-# 🔒 Disable PHP execution in uploads
+# 🔒 Disable PHP execution ONLY in uploads
 # =========================
-<IfModule mod_php.c>
-    php_flag engine off
-</IfModule>
+<Directory "uploads">
+    <IfModule mod_php.c>
+        php_flag engine off
+    </IfModule>
+</Directory>
+
+# OR, a simpler method for shared hosting like InfinityFree:
+RewriteRule ^uploads/.*\.php$ - [F,L]
