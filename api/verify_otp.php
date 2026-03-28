@@ -1,39 +1,36 @@
 <?php
-
 require_once "../includes/config.php";
 require_once "../includes/database.php";
 require_once "../includes/security.php";
 
 header("Content-Type: application/json");
+session_start();
 
-$user_id = intval($_POST['user_id'] ?? 0);
-$otp = $_POST['otp'] ?? '';
+$user_id = $_SESSION['user_id'] ?? null;
+if(!$user_id) exit(json_encode(["error"=>"Unauthorized"]));
 
-$stmt = $conn->prepare("
-    SELECT role FROM users 
-    WHERE id=? AND otp_code=? AND otp_expires > NOW()
-");
+// CSRF
+$csrf = $_POST['csrf_token'] ?? '';
+if(!verify_csrf_token($csrf)) exit(json_encode(["error"=>"Invalid CSRF token"]));
+
+$otp = trim($_POST['otp'] ?? '');
+if(!$otp) exit(json_encode(["error"=>"OTP required"]));
+
+// Check OTP
+$stmt = db_prepare("SELECT expires_at FROM otp_codes WHERE user_id=? AND code=? LIMIT 1");
 $stmt->bind_param("is", $user_id, $otp);
 $stmt->execute();
+$record = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
-$user = $stmt->get_result()->fetch_assoc();
-
-if(!$user){
-    exit(json_encode(["error"=>"Invalid OTP"]));
+if(!$record || strtotime($record['expires_at']) < time()){
+    exit(json_encode(["error"=>"Invalid or expired OTP"]));
 }
 
-// Clear OTP
-$conn->query("UPDATE users SET otp_code=NULL, otp_expires=NULL WHERE id=$user_id");
+// OTP valid, mark verified
+$stmt = db_prepare("DELETE FROM otp_codes WHERE user_id=?");
+$stmt->bind_param("i",$user_id);
+$stmt->execute();
+$stmt->close();
 
-// Session + JWT
-session_regenerate_id(true);
-
-$_SESSION['user_id'] = $user_id;
-$_SESSION['role'] = $user['role'];
-
-$token = generate_jwt($user_id);
-
-echo json_encode([
-    "success"=>true,
-    "token"=>$token
-]);
+echo json_encode(["success"=>true,"message"=>"OTP verified"]);
