@@ -1,58 +1,43 @@
 <?php
-
 require_once "../includes/config.php";
 require_once "../includes/database.php";
 require_once "../includes/security.php";
 
 header("Content-Type: application/json");
+session_start();
 
 // CSRF
-if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
-    exit(json_encode(["error"=>"Invalid CSRF"]));
+$csrf = $_POST['csrf_token'] ?? '';
+if(!verify_csrf_token($csrf)){
+    exit(json_encode(["error"=>"Invalid CSRF token"]));
 }
 
-$name = trim($_POST['name'] ?? '');
-$email = trim($_POST['email'] ?? '');
-$password = $_POST['password'] ?? '';
+// Input validation
+$name = sanitize($_POST['name'] ?? '');
+$email = filter_var(trim($_POST['email'] ?? ''), FILTER_VALIDATE_EMAIL);
+$password = trim($_POST['password'] ?? '');
 
-if(empty($name) || empty($email) || empty($password)){
-    exit(json_encode(["error"=>"All fields required"]));
+if(!$name || !$email || !$password){
+    exit(json_encode(["error"=>"All fields are required"]));
 }
 
-// Validate email
-if(!filter_var($email, FILTER_VALIDATE_EMAIL)){
-    exit(json_encode(["error"=>"Invalid email"]));
-}
-
-// Strong password
-if(strlen($password) < 6){
-    exit(json_encode(["error"=>"Password must be at least 6 characters"]);
-}
-
-// Check existing
-$stmt = $conn->prepare("SELECT id FROM users WHERE email=?");
-$stmt->bind_param("s", $email);
+// Check if email exists
+$stmt = db_prepare("SELECT id FROM users WHERE email=? LIMIT 1");
+$stmt->bind_param("s",$email);
 $stmt->execute();
-
 if($stmt->get_result()->num_rows > 0){
+    $stmt->close();
     exit(json_encode(["error"=>"Email already exists"]));
 }
+$stmt->close();
 
 // Hash password
-$hashed = password_hash($password, PASSWORD_BCRYPT);
+$hash = password_hash($password, PASSWORD_BCRYPT);
 
-// Email verification token
-$token = bin2hex(random_bytes(32));
-
-$stmt = $conn->prepare("
-    INSERT INTO users (name, email, password, verify_token, status)
-    VALUES (?, ?, ?, ?, 'inactive')
-");
-$stmt->bind_param("ssss", $name, $email, $hashed, $token);
+// Insert user
+$stmt = db_prepare("INSERT INTO users (name,email,password,role,status) VALUES (?,?,?, 'user', 'active')");
+$stmt->bind_param("sss",$name,$email,$hash);
 $stmt->execute();
+$stmt->close();
 
-// NOTE: Send email here (or simulate)
-echo json_encode([
-    "success"=>true,
-    "message"=>"Registered. Please verify your email."
-]);
+echo json_encode(["success"=>true,"message"=>"Registration successful"]);
