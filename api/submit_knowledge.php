@@ -1,36 +1,27 @@
 <?php
-
 require_once "../includes/config.php";
 require_once "../includes/database.php";
 require_once "../includes/security.php";
 
 header("Content-Type: application/json");
+session_start();
 
-require_login();
+$user_id = $_SESSION['user_id'] ?? null;
+if(!$user_id) exit(json_encode(["error"=>"Unauthorized"]));
 
 // CSRF
-if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
-    exit(json_encode(["error"=>"Invalid CSRF"]));
-}
+$csrf = $_POST['csrf_token'] ?? '';
+if(!verify_csrf_token($csrf)) exit(json_encode(["error"=>"Invalid CSRF token"]));
 
-$title = trim($_POST['title'] ?? '');
-$content = trim($_POST['content'] ?? '');
+// Input
+$question = trim($_POST['question'] ?? '');
+$answer = trim($_POST['answer'] ?? '');
+if(!$question || !$answer) exit(json_encode(["error"=>"Both question and answer required"]));
 
-if(empty($title) || empty($content)){
-    exit(json_encode(["error"=>"All fields required"]));
-}
-
-// Optional: only admin can add knowledge
-if(!is_admin()){
-    exit(json_encode(["error"=>"Admin only"]));
-}
-
-$stmt = $conn->prepare("
-    INSERT INTO knowledge_base (title, content, created_at)
-    VALUES (?, ?, NOW())
-");
-
-$stmt->bind_param("ss", $title, $content);
+// Save knowledge
+$stmt = db_prepare("INSERT INTO knowledge (question, answer, user_id, created_at) VALUES (?,?,?,NOW())");
+$stmt->bind_param("ssi", $question, $answer, $user_id);
 $stmt->execute();
+$stmt->close();
 
-echo json_encode(["success"=>true]);
+echo json_encode(["success"=>true,"message"=>"Knowledge submitted"]);
