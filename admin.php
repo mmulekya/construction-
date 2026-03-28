@@ -19,6 +19,7 @@ if(!is_logged_in() || !is_admin()){
 <button onclick="loadUsers()">Users</button>
 <button onclick="loadChats()">Chats</button>
 <button onclick="logout()">Logout</button>
+<button onclick="downloadBackup()">Download Backup</button>
 
 <div id="admin-data"></div>
 
