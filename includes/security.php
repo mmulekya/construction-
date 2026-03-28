@@ -1,208 +1,97 @@
 <?php
+// ==========================================
+// 🔒 SECURITY FUNCTIONS
+// ==========================================
 
-require_once "config.php";
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/database.php';
 
-/* =========================
-   FORCE HTTPS
-========================= */
-function enforce_https(){
-    if(
-        (!isset($_SERVER['HTTPS']) || $_SERVER['HTTPS'] !== 'on') &&
-        $_SERVER['HTTP_HOST'] !== 'localhost'
-    ){
-        header('Location: https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
-        exit;
-    }
-}
-
-/* =========================
-   SECURE SESSION SETTINGS
-========================= */
-function secure_session(){
-
-    if (session_status() === PHP_SESSION_NONE) {
-
-        session_set_cookie_params([
-            'lifetime' => 0,
-            'path' => '/',
-            'secure' => true,
-            'httponly' => true,
-            'samesite' => 'Strict'
-        ]);
-
-        session_start();
-    }
-
-    // Session timeout (30 min)
-    if(isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY'] > 1800)){
-        session_unset();
-        session_destroy();
-    }
-
-    $_SESSION['LAST_ACTIVITY'] = time();
-}
-
-secure_session();
-
-/* =========================
-   SANITIZE INPUT
-========================= */
-function sanitize($data){
-    return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
-}
-
-/* =========================
-   CSRF PROTECTION
-========================= */
-function generate_csrf_token(){
-    if(empty($_SESSION['csrf_token'])){
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    return $_SESSION['csrf_token'];
-}
-
-function verify_csrf_token($token){
+// ---------------------------
+// 🔐 CSRF VERIFICATION
+// ---------------------------
+function verify_csrf_token($token) {
     return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
 }
 
-/* =========================
-   AUTH CHECKS
-========================= */
-function is_logged_in(){
-    return isset($_SESSION['user_id']);
-}
+// ---------------------------
+// 🔐 BRUTE-FORCE / LOGIN ATTEMPTS
+// ---------------------------
+function log_login_attempt($user, $success = 0) {
+    global $mysqli;
 
-function is_admin(){
-    return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
-}
-
-function require_login(){
-    if(!is_logged_in()){
-        http_response_code(401);
-        echo json_encode(["error" => "Unauthorized"]);
-        exit;
-    }
-}
-
-function require_admin(){
-    if(!is_logged_in() || !is_admin()){
-        http_response_code(403);
-        echo json_encode(["error" => "Forbidden"]);
-        exit;
-    }
-}
-
-/* =========================
-   RATE LIMIT (EMAIL + IP)
-========================= */
-function is_rate_limited($conn, $identifier){
-
-    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-
-    $stmt = $conn->prepare("
-        SELECT COUNT(*) as attempts 
-        FROM login_attempts 
-        WHERE (identifier=? OR ip=?)
-        AND success=0 
-        AND created_at > (NOW() - INTERVAL 15 MINUTE)
-    ");
-
-    $stmt->bind_param("ss", $identifier, $ip);
-    $stmt->execute();
-
-    $result = $stmt->get_result()->fetch_assoc();
-
-    return ($result['attempts'] >= 5);
-}
-
-/* =========================
-   LOG LOGIN ATTEMPTS
-========================= */
-function log_login_attempt($conn, $identifier, $success){
-
-    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-
-    $stmt = $conn->prepare("
-        INSERT INTO login_attempts (identifier, ip, success, created_at)
-        VALUES (?, ?, ?, NOW())
-    ");
-
-    $stmt->bind_param("ssi", $identifier, $ip, $success);
-    $stmt->execute();
-}
-
-/* =========================
-   JWT AUTH
-========================= */
-function generate_jwt($user_id){
-
-    $secret = getenv('CSRF_SECRET') ?: "fallback_secret";
-
-    $payload = [
-        "user_id" => $user_id,
-        "exp" => time() + 3600
-    ];
-
-    $base = base64_encode(json_encode($payload));
-
-    return $base . "." . hash_hmac('sha256', $base, $secret);
-}
-
-function verify_jwt($token){
-
-    $parts = explode(".", $token);
-
-    if(count($parts) !== 2){
-        return false;
-    }
-
-    list($base, $signature) = $parts;
-
-    $secret = getenv('CSRF_SECRET') ?: "fallback_secret";
-
-/* =========================
-   IP BLOCK SYSTEM
-========================= */
-
-function is_ip_blocked($conn){
-    $ip = $_SERVER['REMOTE_ADDR'];
-
-    $stmt = $conn->prepare("SELECT id FROM blocked_ips WHERE ip=?");
-    $stmt->bind_param("s", $ip);
-    $stmt->execute();
-
-    return $stmt->get_result()->num_rows > 0;
-}
-
-function auto_block_ip($conn, $ip){
-
-    $stmt = $conn->prepare("
-        SELECT COUNT(*) as attempts 
-        FROM login_attempts 
-        WHERE ip=? AND success=0 AND created_at > (NOW() - INTERVAL 10 MINUTE)
-    ");
-    $stmt->bind_param("s", $ip);
-    $stmt->execute();
-
-    $data = $stmt->get_result()->fetch_assoc();
-
-    if($data['attempts'] >= 10){
-        $stmt = $conn->prepare("INSERT INTO blocked_ips (ip) VALUES (?)");
-        $stmt->bind_param("s", $ip);
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $stmt = db_prepare("INSERT INTO login_attempts (email, ip, success, created_at) VALUES (?, ?, ?, NOW())");
+    if ($stmt) {
+        $stmt->bind_param("ssi", $user, $ip, $success);
         $stmt->execute();
+        $stmt->close();
     }
 }
-    $valid_sig = hash_hmac('sha256', $base, $secret);
 
-    if(!hash_equals($valid_sig, $signature)){
-        return false;
+function is_rate_limited($user, $max_attempts = 5, $interval_minutes = 5) {
+    global $mysqli;
+
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $stmt = db_prepare("
+        SELECT COUNT(*) AS attempts 
+        FROM login_attempts 
+        WHERE email=? AND ip=? AND created_at > (NOW() - INTERVAL ? MINUTE)
+    ");
+    if ($stmt) {
+        $stmt->bind_param("ssi", $user, $ip, $interval_minutes);
+        $stmt->execute();
+        $result = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        return ($result['attempts'] >= $max_attempts);
     }
 
-    $payload = json_decode(base64_decode($base), true);
+    return false;
+}
 
-    if(!$payload || $payload['exp'] < time()){
-        return false;
+// ---------------------------
+// 🔐 CLEAN OLD ATTEMPTS
+// ---------------------------
+function clean_old_attempts($days = 30) {
+    global $mysqli;
+    $stmt = db_prepare("DELETE FROM login_attempts WHERE created_at < (NOW() - INTERVAL ? DAY)");
+    if ($stmt) {
+        $stmt->bind_param("i", $days);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
+// ---------------------------
+// 🔐 RATE LIMIT (GLOBAL API / Actions)
+// ---------------------------
+function check_rate_limit($key, $limit = 10, $seconds = 60) {
+    global $mysqli;
+
+    $stmt = db_prepare("
+        INSERT INTO rate_limits (`key`, `requests`, `last_request`) 
+        VALUES (?, 1, NOW())
+        ON DUPLICATE KEY UPDATE 
+            requests = IF(TIMESTAMPDIFF(SECOND, last_request, NOW()) > ?, 1, requests + 1),
+            last_request = NOW()
+    ");
+    if ($stmt) {
+        $stmt->bind_param("si", $key, $seconds);
+        $stmt->execute();
+        $stmt->close();
     }
 
-    return $payload['user_id'];
+    // Check count
+    $stmt = db_prepare("SELECT requests FROM rate_limits WHERE `key`=?");
+    if ($stmt) {
+        $stmt->bind_param("s", $key);
+        $stmt->execute();
+        $result = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        if ($result && $result['requests'] > $limit) {
+            http_response_code(429);
+            exit(json_encode(["error" => "Rate limit exceeded"]));
+        }
+    }
 }
