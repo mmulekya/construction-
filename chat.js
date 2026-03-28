@@ -8,6 +8,10 @@ let CSRF_TOKEN = document.getElementById("csrf_token")?.value || "";
 // =========================
 const chatBox = document.getElementById("chat-box");
 
+function downloadBackup(){
+    window.location.href = "api/admin/backup_db.php";
+}
+
 // =========================
 // 🚀 LOAD HISTORY
 // =========================
