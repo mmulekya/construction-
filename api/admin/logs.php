@@ -1,22 +1,25 @@
 <?php
-
 require_once "../../includes/config.php";
 require_once "../../includes/database.php";
 require_once "../../includes/security.php";
 
 header("Content-Type: application/json");
-
+session_start();
 require_login();
 require_admin();
 
 $result = $conn->query("
-    SELECT * FROM login_attempts ORDER BY created_at DESC LIMIT 200
+SELECT ip_address, COUNT(*) as attempts
+FROM logs
+GROUP BY ip_address
+HAVING attempts > 3
+ORDER BY attempts DESC
 ");
 
-$logs = [];
+$attackers = [];
 
 while($row = $result->fetch_assoc()){
-    $logs[] = $row;
+    $attackers[] = $row;
 }
 
-echo json_encode(["success"=>true, "logs"=>$logs]);
+echo json_encode(["attackers"=>$attackers]);
