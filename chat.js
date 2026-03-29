@@ -183,3 +183,19 @@ function createProject(){
         }
     });
 }
+
+function loadBanned(){
+
+    fetch("api/admin/logs.php")
+    .then(res=>res.json())
+    .then(data=>{
+
+        let div = document.getElementById("banned");
+        div.innerHTML = "";
+
+        data.banned.forEach(b=>{
+            div.innerHTML += "<p style='color:red'>"+b.ip+" - "+b.reason+"</p>";
+        });
+
+    });
+}
