@@ -112,3 +112,33 @@ function check_rate_limit($key, $limit = 10, $seconds = 60) {
         }
     }
 }
+
+function auto_ban_ip($conn){
+
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+    // Count failed login attempts in last 15 mins
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as attempts 
+        FROM login_attempts
+        WHERE ip=? AND success=0
+        AND created_at > NOW() - INTERVAL 15 MINUTE
+    ");
+
+    $stmt->bind_param("s", $ip);
+    $stmt->execute();
+
+    $result = $stmt->get_result()->fetch_assoc();
+
+    if($result['attempts'] >= 10){
+
+        // Insert into banned_ips
+        $stmt = $conn->prepare("
+            INSERT IGNORE INTO banned_ips (ip, reason, banned_at)
+            VALUES (?, 'Too many failed logins', NOW())
+        ");
+
+        $stmt->bind_param("s", $ip);
+        $stmt->execute();
+    }
+}
