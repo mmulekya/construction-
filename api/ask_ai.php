@@ -77,6 +77,28 @@ if(strlen($question) > 500){
 ========================= */
 usleep(200000);
 
+
+$ip = $_SERVER['REMOTE_ADDR'];
+
+$stmt = $conn->prepare("
+SELECT COUNT(*) as attempts 
+FROM logs
+WHERE ip_address=? 
+AND created_at > NOW() - INTERVAL 5 MINUTE
+");
+
+$stmt->bind_param("s",$ip);
+$stmt->execute();
+
+$res = $stmt->get_result()->fetch_assoc();
+
+if($res['attempts'] > 20){
+    $conn->query("
+    INSERT IGNORE INTO banned_ips (ip, reason, banned_at)
+    VALUES ('$ip','AI abuse',NOW())
+    ");
+}
+
 /* =========================
    🔐 DAILY LIMIT
 ========================= */
