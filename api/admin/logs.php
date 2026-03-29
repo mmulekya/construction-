@@ -22,4 +22,17 @@ while($row = $result->fetch_assoc()){
     $attackers[] = $row;
 }
 
+$banned = $conn->query("SELECT * FROM banned_ips ORDER BY banned_at DESC");
+
+$banned_ips = [];
+
+while($row = $banned->fetch_assoc()){
+    $banned_ips[] = $row;
+}
+
+echo json_encode([
+    "attackers"=>$attackers,
+    "banned"=>$banned_ips
+]);
+
 echo json_encode(["attackers"=>$attackers]);
