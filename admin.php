@@ -23,6 +23,9 @@ if(!is_logged_in() || !is_admin()){
 
 <div id="admin-data"></div>
 
+<h3>🚫 Banned IPs</h3>
+<div id="banned"></div>
+
 <script src="chat.js"></script>
 
 </body>
