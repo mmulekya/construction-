@@ -1,10 +1,27 @@
 <?php
 // ==========================================
+
 // 🔒 SECURITY FUNCTIONS
 // ==========================================
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/database.php';
+
+function check_banned_ip($conn){
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+    $stmt = $conn->prepare("SELECT id FROM banned_ips WHERE ip=? LIMIT 1");
+    $stmt->bind_param("s", $ip);
+    $stmt->execute();
+
+    if($stmt->get_result()->num_rows > 0){
+        http_response_code(403);
+        exit("🚫 Your IP has been blocked.");
+    }
+}
+
+// Run check automatically
+check_banned_ip($conn);
 
 // ---------------------------
 // 🔐 CSRF VERIFICATION
