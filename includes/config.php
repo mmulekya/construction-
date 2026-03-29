@@ -3,6 +3,16 @@
 // 🔒 PRODUCTION CONFIG & SECURITY SETTINGS
 // =========================================
 
+header("Content-Security-Policy: 
+default-src 'self'; 
+script-src 'self'; 
+style-src 'self' 'unsafe-inline'; 
+img-src 'self' data:; 
+connect-src 'self'; 
+font-src 'self'; 
+frame-ancestors 'none';
+");
+
 // -------------------------------
 // 🚫 ERROR HANDLING
 // -------------------------------
