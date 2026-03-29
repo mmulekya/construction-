@@ -142,3 +142,16 @@ function auto_ban_ip($conn){
         $stmt->execute();
     }
 }
+
+function log_attack($conn, $type){
+
+    $ip = $_SERVER['REMOTE_ADDR'];
+
+    $stmt = $conn->prepare("
+        INSERT INTO logs (action, ip_address, created_at)
+        VALUES (?, ?, NOW())
+    ");
+
+    $stmt->bind_param("ss", $type, $ip);
+    $stmt->execute();
+}
