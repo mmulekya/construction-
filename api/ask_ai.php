@@ -305,6 +305,18 @@ try{
 }
 
 /* ==========================================
+
+// =========================
+// 💾 SAVE CACHE
+// =========================
+$stmt = $conn->prepare("
+INSERT INTO query_cache (question, response, created_at)
+VALUES (?, ?, NOW())
+");
+
+$stmt->bind_param("ss", $question, $response);
+$stmt->execute();
+
    💾 13. SAVE
 ========================================== */
 save_message($conn, $user_id, "user", $question);
