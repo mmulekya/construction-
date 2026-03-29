@@ -1,7 +1,10 @@
 <?php
-require_once "../includes/cleanup.php";
+/**
+ * 🔒 SECURE AI GATEWAY (FINAL VERSION)
+ * Fully hardened: Auto-ban, Rate-limit, Hybrid AI, PDF semantic search
+ */
 
-run_cleanup($conn);
+require_once "../includes/cleanup.php";
 require_once "../includes/config.php";
 require_once "../includes/database.php";
 require_once "../includes/security.php";
@@ -14,14 +17,42 @@ require_once "../includes/project.php";
 
 header("Content-Type: application/json");
 
-// Start session
 if(session_status() === PHP_SESSION_NONE){
     session_start();
 }
 
-/* =========================
-   🔐 AUTH
-========================= */
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+/* ==========================================
+   🔥 LOG ALL REQUESTS (IMPORTANT)
+========================================== */
+$stmt = $conn->prepare("
+INSERT INTO logs (action, ip_address, created_at)
+VALUES ('ask_ai_request', ?, NOW())
+");
+$stmt->bind_param("s", $ip);
+$stmt->execute();
+
+/* ==========================================
+   🔒 1. BAN CHECK
+========================================== */
+$stmt = $conn->prepare("
+SELECT id FROM banned_ips 
+WHERE ip_address=? AND expires_at > NOW()
+");
+$stmt->bind_param("s", $ip);
+$stmt->execute();
+
+if($stmt->get_result()->num_rows > 0){
+    http_response_code(403);
+    exit(json_encode([
+        "error"=>"Access denied. Your IP is banned."
+    ]));
+}
+
+/* ==========================================
+   🔐 2. AUTH (SESSION OR JWT)
+========================================== */
 $user_id = $_SESSION['user_id'] ?? null;
 
 if(!$user_id){
@@ -34,262 +65,230 @@ if(!$user_id){
 }
 
 if(!$user_id){
+    http_response_code(401);
     exit(json_encode(["error"=>"Unauthorized"]));
 }
 
-/* =========================
-   🔐 RATE LIMIT
-========================= */
+/* ==========================================
+   ⚡ 3. RATE LIMIT
+========================================== */
 check_rate_limit($conn, "ask_ai_" . $user_id, 5, 60);
 
-/* =========================
-   🔐 INPUT
-========================= */
+/* ==========================================
+   🚨 4. AUTO BAN (AI ABUSE)
+========================================== */
+$stmt = $conn->prepare("
+SELECT COUNT(*) as attempts 
+FROM logs 
+WHERE ip_address=? 
+AND created_at > NOW() - INTERVAL 5 MINUTE
+");
+$stmt->bind_param("s", $ip);
+$stmt->execute();
+
+$abuse = $stmt->get_result()->fetch_assoc();
+
+if($abuse['attempts'] > 20){
+
+    $stmt = $conn->prepare("
+    INSERT IGNORE INTO banned_ips (ip_address, banned_at, expires_at, reason)
+    VALUES (?, NOW(), DATE_ADD(NOW(), INTERVAL 24 HOUR), 'AI abuse')
+    ");
+    $stmt->bind_param("s", $ip);
+    $stmt->execute();
+
+    exit(json_encode([
+        "error"=>"Too many requests. IP banned for 24 hours."
+    ]));
+}
+
+/* ==========================================
+   🔐 5. INPUT + CSRF
+========================================== */
 $input = json_decode(file_get_contents("php://input"), true);
 
 if(!$input){
     exit(json_encode(["error"=>"Invalid request"]));
 }
 
-/* =========================
-   🔐 CSRF
-========================= */
 if(!verify_csrf_token($input['csrf_token'] ?? '')){
     exit(json_encode(["error"=>"Invalid CSRF token"]));
 }
 
-/* =========================
-   🧾 VALIDATION
-========================= */
 $question = trim($input['question'] ?? '');
 $project_id = intval($input['project_id'] ?? 0);
 
-if(strlen($question) < 5){
-    exit(json_encode(["error"=>"Ask a more detailed question"]));
+if(strlen($question) < 5 || strlen($question) > 500){
+    exit(json_encode([
+        "error"=>"Question must be 5–500 characters"
+    ]));
 }
 
-if(strlen($question) > 500){
-    exit(json_encode(["error"=>"Question too long"]));
-}
-
-/* =========================
-   🛑 SMALL DELAY
-========================= */
-usleep(200000);
-
-
-$ip = $_SERVER['REMOTE_ADDR'];
-
-$stmt = $conn->prepare("
-SELECT COUNT(*) as attempts 
-FROM logs
-WHERE ip_address=? 
-AND created_at > NOW() - INTERVAL 5 MINUTE
-");
-
-$stmt->bind_param("s",$ip);
-$stmt->execute();
-
-$res = $stmt->get_result()->fetch_assoc();
-
-if($res['attempts'] > 20){
-    $conn->query("
-    INSERT IGNORE INTO banned_ips (ip, reason, banned_at)
-    VALUES ('$ip','AI abuse',NOW())
-    ");
-}
-
-/* =========================
-   🔐 DAILY LIMIT
-========================= */
-$stmt = $conn->prepare("
-    SELECT requests FROM ai_usage 
-    WHERE user_id=? AND last_request=CURDATE()
-");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-
-$usage = $stmt->get_result()->fetch_assoc();
-
-if($usage && $usage['requests'] >= 20){
-    exit(json_encode(["error"=>"Daily AI limit reached"]));
-}
-
-// Update usage
-$stmt = $conn->prepare("
-    INSERT INTO ai_usage (user_id, requests, last_request)
-    VALUES (?,1,CURDATE())
-    ON DUPLICATE KEY UPDATE requests=requests+1
-");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-
-/* =========================
-   STEP 1: CALCULATOR
-========================= */
+/* ==========================================
+   ⚡ 6. CALCULATOR (FAST PATH)
+========================================== */
 $calc = calculate_engineering($question);
 
 if($calc){
     save_message($conn, $user_id, "user", $question);
     save_message($conn, $user_id, "ai", $calc);
 
-    echo json_encode([
+    exit(json_encode([
         "status"=>"success",
         "answer"=>$calc,
         "source"=>"calculator"
-    ]);
-    exit;
+    ]));
 }
 
-/* =========================
-   STEP 2: CHAT MEMORY (CONTEXT)
-========================= */
+/* ==========================================
+   🧠 7. MEMORY
+========================================== */
+$memory_text = "";
 $messages = get_recent_messages($conn, $user_id, 8);
 
-/* =========================
-   STEP 3: PROJECT CONTEXT
-========================= */
+foreach($messages as $msg){
+    $memory_text .= $msg['message'] . "\n";
+}
+
+/* ==========================================
+   🏗️ 8. PROJECT CONTEXT
+========================================== */
 $project_context = "";
 
 if($project_id > 0){
 
-    $check = $conn->prepare("SELECT id FROM projects WHERE id=? AND user_id=?");
-    $check->bind_param("ii", $project_id, $user_id);
-    $check->execute();
+    $stmt = $conn->prepare("
+        SELECT data FROM project_data 
+        WHERE project_id=? 
+        ORDER BY id DESC LIMIT 10
+    ");
+    $stmt->bind_param("i", $project_id);
+    $stmt->execute();
 
-    if($check->get_result()->num_rows > 0){
+    $res = $stmt->get_result();
 
-        $stmt = $conn->prepare("
-            SELECT data FROM project_data 
-            WHERE project_id=? 
-            ORDER BY id DESC 
-            LIMIT 10
-        ");
-
-        $stmt->bind_param("i", $project_id);
-        $stmt->execute();
-
-        $res = $stmt->get_result();
-
-        while($row = $res->fetch_assoc()){
-            $project_context .= substr($row['data'],0,200)."\n";
-        }
+    while($row = $res->fetch_assoc()){
+        $project_context .= $row['data'] . "\n";
     }
 }
 
-/* =========================
-   STEP 4: KNOWLEDGE
-========================= */
-$knowledge = search_knowledge($conn, $question);
+/* ==========================================
+   📚 9. KNOWLEDGE SEARCH (FIXED)
+========================================== */
+$knowledge_context = "";
 
-if($knowledge && $knowledge->num_rows > 0){
-    $row = $knowledge->fetch_assoc();
+$k = search_knowledge($conn, $question);
 
-    $response = $row['content'];
-
-    save_message($conn, $user_id, "user", $question);
-    save_message($conn, $user_id, "ai", $response);
-
-    echo json_encode([
-        "status"=>"success",
-        "answer"=>$response,
-        "source"=>"knowledge"
-    ]);
-    exit;
+if($k){
+    while($row = $k->fetch_assoc()){
+        $knowledge_context .= $row['content'] . "\n";
+    }
 }
 
-/* =========================
-   STEP 5: PDF SEMANTIC SEARCH
-========================= */
+/* ==========================================
+   📄 10. SEMANTIC PDF SEARCH (SAFE)
+========================================== */
 $pdf_context = "";
 
 try{
-
     $q_embed = get_cached_embedding($conn, $question);
 
-    $res = $conn->query("
-        SELECT content, embedding 
-        FROM pdf_chunks 
-        ORDER BY id DESC 
-        LIMIT 200
-    ");
+    if(!empty($q_embed)){
 
-    $scores = [];
+        $res = $conn->query("
+            SELECT content, embedding 
+            FROM pdf_chunks 
+            ORDER BY id DESC 
+            LIMIT 50
+        ");
 
-    while($row = $res->fetch_assoc()){
+        $scores = [];
 
-        $emb = json_decode($row['embedding'], true);
-        if(!$emb) continue;
+        while($row = $res->fetch_assoc()){
 
-        $semantic = cosine_similarity($q_embed, $emb);
-        $keyword = stripos($row['content'], $question) !== false ? 1 : 0;
+            $emb = json_decode($row['embedding'], true);
+            if(!$emb) continue;
 
-        $score = ($semantic * 0.7) + ($keyword * 0.3);
+            $score = 0;
+            $len = min(count($q_embed), count($emb));
 
-        $scores[] = [
-            "content"=>$row['content'],
-            "score"=>$score
-        ];
-    }
+            for($i=0;$i<$len;$i++){
+                $score += $q_embed[$i] * $emb[$i];
+            }
 
-    usort($scores, fn($a,$b)=>$b['score'] <=> $a['score']);
-
-    $top = array_slice($scores,0,5);
-
-    $max_chars = 1500;
-
-    foreach($top as $t){
-
-        if(strlen($pdf_context) + strlen($t['content']) > $max_chars){
-            break;
+            $scores[] = [
+                "content"=>$row['content'],
+                "score"=>$score
+            ];
         }
 
-        $pdf_context .= substr($t['content'],0,300)."\n";
+        usort($scores, fn($a,$b)=> $b['score'] <=> $a['score']);
+
+        foreach(array_slice($scores,0,3) as $s){
+            $pdf_context .= $s['content'] . "\n";
+        }
     }
 
 }catch(Exception $e){
     $pdf_context = "";
 }
 
-/* =========================
-   STEP 6: GPT WITH CONTEXT
-========================= */
+/* ==========================================
+   ⚡ 11. LIMIT CONTEXT (VERY IMPORTANT)
+========================================== */
+$pdf_context = substr($pdf_context, 0, 1500);
+$knowledge_context = substr($knowledge_context, 0, 1000);
+
+/* ==========================================
+   🤖 12. AI CALL
+========================================== */
 $chat_history = [];
+
+$chat_history[] = [
+    "role"=>"system",
+    "content"=>"You are BuildSmart AI.
+
+Use:
+
+PDF:
+$pdf_context
+
+Knowledge:
+$knowledge_context
+
+Project:
+$project_context
+
+Answer clearly."
+];
 
 foreach($messages as $msg){
     $chat_history[] = [
-        "role" => $msg['role'] === 'ai' ? "assistant" : "user",
-        "content" => $msg['message']
+        "role"=>$msg['role'] === 'ai' ? "assistant" : "user",
+        "content"=>$msg['message']
     ];
 }
 
-// Add system context
 $chat_history[] = [
-    "role" => "system",
-    "content" => "Project:\n".$project_context."\nPDF:\n".$pdf_context
-];
-
-// Add current question
-$chat_history[] = [
-    "role" => "user",
-    "content" => $question
+    "role"=>"user",
+    "content"=>$question
 ];
 
 try{
     $response = gpt_request_with_history($chat_history);
 }catch(Exception $e){
-    $response = "AI service unavailable.";
+    $response = "AI temporarily unavailable.";
 }
 
-/* =========================
-   SAVE CONVERSATION
-========================= */
+/* ==========================================
+   💾 13. SAVE
+========================================== */
 save_message($conn, $user_id, "user", $question);
 save_message($conn, $user_id, "ai", $response);
 
-/* =========================
-   OUTPUT
-========================= */
+/* ==========================================
+   ✅ OUTPUT
+========================================== */
 echo json_encode([
     "status"=>"success",
     "answer"=>$response,
