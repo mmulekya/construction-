@@ -240,6 +240,30 @@ $pdf_context = substr($pdf_context, 0, 1500);
 $knowledge_context = substr($knowledge_context, 0, 1000);
 
 /* ==========================================
+
+// =========================
+// ⚡ CHECK CACHE FIRST
+// =========================
+$stmt = $conn->prepare("
+SELECT response FROM query_cache 
+WHERE question=? 
+AND created_at > NOW() - INTERVAL 1 DAY
+LIMIT 1
+");
+
+$stmt->bind_param("s", $question);
+$stmt->execute();
+
+$cached = $stmt->get_result()->fetch_assoc();
+
+if($cached){
+    echo json_encode([
+        "status"=>"success",
+        "answer"=>$cached['response'],
+        "source"=>"cache"
+    ]);
+    exit;
+}
    🤖 12. AI CALL
 ========================================== */
 $chat_history = [];
