@@ -1,40 +1,28 @@
 <?php
-
 require_once "../../includes/config.php";
 require_once "../../includes/database.php";
 require_once "../../includes/security.php";
 
 header("Content-Type: application/json");
-
+session_start();
 require_login();
 require_admin();
 
-if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
-    exit(json_encode(["error"=>"Invalid CSRF"]));
+$file = $_FILES['pdf'] ?? null;
+
+if(!$file){
+    exit(json_encode(["error"=>"No file"]));
 }
 
-if(!isset($_FILES['pdf'])){
-    exit(json_encode(["error"=>"No file uploaded"]));
-}
-
-$file = $_FILES['pdf'];
-
-$allowed = ['application/pdf'];
-
-if(!in_array($file['type'], $allowed)){
+if(pathinfo($file['name'], PATHINFO_EXTENSION) !== 'pdf'){
     exit(json_encode(["error"=>"Only PDF allowed"]));
 }
 
-// Limit size (5MB)
-if($file['size'] > 5 * 1024 * 1024){
-    exit(json_encode(["error"=>"File too large"]));
+if($file['size'] > 2 * 1024 * 1024){
+    exit(json_encode(["error"=>"Max 2MB allowed"]));
 }
 
-$filename = time() . "_" . basename($file['name']);
-$target = "../../uploads/pdfs/" . $filename;
+$filename = time()."_".$file['name'];
+move_uploaded_file($file['tmp_name'], "../../uploads/pdfs/".$filename);
 
-if(move_uploaded_file($file['tmp_name'], $target)){
-    echo json_encode(["success"=>true, "file"=>$filename]);
-} else {
-    echo json_encode(["error"=>"Upload failed"]);
-}
+echo json_encode(["success"=>true]);
