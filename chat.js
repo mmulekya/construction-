@@ -1,201 +1,237 @@
-// =========================
-// 🔐 CSRF (SAFE HANDLING)
-// =========================
-let CSRF_TOKEN = document.getElementById("csrf_token")?.value || "";
+// ========================================
+// 🔐 SAFE CHAT MODULE (NO COLLISIONS)
+// ========================================
+document.addEventListener("DOMContentLoaded", () => {
 
-// =========================
-// 📦 ELEMENTS
-// =========================
-const chatBox = document.getElementById("chat-box");
+    // -----------------------------
+    // 📦 SAFE ELEMENT CHECK
+    // -----------------------------
+    const chatBox = document.getElementById("chat-box");
+    if (!chatBox) return; // STOP if not chat page
 
-function downloadBackup(){
-    window.location.href = "api/admin/backup_db.php";
-}
+    const input = document.getElementById("question");
+    let csrfToken = document.getElementById("csrf_token")?.value || "";
 
-// =========================
-// 🚀 LOAD HISTORY
-// =========================
-window.onload = loadHistory;
+    // -----------------------------
+    // 🔐 FETCH CSRF (SAFE)
+    // -----------------------------
+    fetch('includes/get_csrf.php', { credentials: "same-origin" })
+    .then(res => res.json())
+    .then(data => {
+        csrfToken = data.token;
+    })
+    .catch(() => console.warn("CSRF fetch failed"));
 
-// =========================
-// 💬 SEND QUESTION
-// =========================
-function sendQuestion(){
-    let input = document.getElementById("question");
-    let q = input.value.trim();
-
-    if(!q || q.length < 3){
-        alert("Enter a valid question");
-        return;
+    // -----------------------------
+    // 🧼 SANITIZE OUTPUT (ANTI-XSS)
+    // -----------------------------
+    function safeText(text) {
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
     }
 
-    // Show user message
-    addMessage(q, "user");
-    input.value = "";
+    // -----------------------------
+    // 🧱 ADD MESSAGE
+    // -----------------------------
+    function addMessage(text, type) {
+        const div = document.createElement("div");
+        div.className = "message " + type;
+        div.innerHTML = safeText(text);
 
-    // Show typing placeholder
-    let aiMsg = addMessage("Typing...", "ai");
-
-    fetch("api/ask_ai.php",{
-        method:"POST",
-        headers: {"Content-Type":"application/x-www-form-urlencoded"},
-        body: "question="+encodeURIComponent(q)+"&csrf_token="+CSRF_TOKEN
-    })
-    .then(res=>res.json())
-    .then(data=>{
-        aiMsg.innerText = "";
-
-        if(data.error){
-            aiMsg.innerText = data.error;
-        } else {
-            streamText(aiMsg, data.response);
-        }
-    })
-    .catch(()=>{
-        aiMsg.innerText = "Network error. Try again.";
-    });
-}
-
-// =========================
-// ✍️ STREAM TEXT (AI typing)
-// =========================
-function streamText(element, text){
-    let i = 0;
-
-    function type(){
-        if(i < text.length){
-            element.innerText += text.charAt(i);
-            i++;
-            setTimeout(type, 10);
-        }
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        return div;
     }
 
-    type();
-}
+    // -----------------------------
+    // ✍️ STREAM AI RESPONSE
+    // -----------------------------
+    function streamText(el, text) {
+        let i = 0;
+        function type() {
+            if (i < text.length) {
+                el.innerHTML += safeText(text.charAt(i));
+                i++;
+                setTimeout(type, 10);
+            }
+        }
+        type();
+    }
 
-// =========================
-// 🧱 ADD MESSAGE
-// =========================
-function addMessage(text, type){
-    let div = document.createElement("div");
-    div.className = "message " + type;
-    div.innerText = text;
+    // -----------------------------
+    // 🚫 ANTI-SPAM LIMIT
+    // -----------------------------
+    let lastRequest = 0;
 
-    chatBox.appendChild(div);
-    chatBox.scrollTop = chatBox.scrollHeight;
+    function canSend() {
+        const now = Date.now();
+        if (now - lastRequest < 1500) {
+            alert("Too fast. Please wait.");
+            return false;
+        }
+        lastRequest = now;
+        return true;
+    }
 
-    return div;
-}
+    // -----------------------------
+    // 💬 SEND MESSAGE
+    // -----------------------------
+    window.sendQuestion = function () {
 
-// =========================
-// 📜 LOAD HISTORY
-// =========================
-function loadHistory(){
-    fetch("api/history.php")
-    .then(res=>res.json())
-    .then(data=>{
-        if(data.history){
-            data.history.reverse().forEach(chat=>{
+        if (!input) return;
+
+        let q = input.value.trim();
+
+        if (q.length < 3 || q.length > 500) {
+            alert("Invalid question length");
+            return;
+        }
+
+        if (!canSend()) return;
+
+        addMessage(q, "user");
+        input.value = "";
+
+        let aiMsg = addMessage("Thinking...", "ai");
+
+        fetch("api/ask_ai.php", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({
+                question: q,
+                csrf_token: csrfToken
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+
+            aiMsg.innerHTML = "";
+
+            if (data.error) {
+                aiMsg.innerHTML = safeText(data.error);
+                return;
+            }
+
+            streamText(aiMsg, data.answer || data.response);
+
+        })
+        .catch(() => {
+            aiMsg.innerHTML = "⚠️ Network error";
+        });
+    };
+
+    // -----------------------------
+    // 📜 LOAD HISTORY
+    // -----------------------------
+    function loadHistory() {
+
+        fetch("api/history.php", {
+            credentials: "same-origin"
+        })
+        .then(res => res.json())
+        .then(data => {
+
+            if (!data.history) return;
+
+            data.history.reverse().forEach(chat => {
                 addMessage(chat.message, "user");
                 addMessage(chat.response, "ai");
             });
-        }
-    })
-    .catch(()=>console.log("History load failed"));
-}
 
-// =========================
-// 🧹 CLEAR CHAT (UI ONLY)
-// =========================
-function clearChat(){
-    chatBox.innerHTML = "";
-}
-
-// =========================
-// 🚪 LOGOUT
-// =========================
-function logout(){
-    fetch("api/logout.php")
-    .then(()=>window.location.href="login.php");
-}
-
-// =========================
-// 🌗 DARK / LIGHT MODE
-// =========================
-function toggleMode(){
-    document.body.classList.toggle("light");
-}
-
-// =========================
-// ⚡ QUICK ASK
-// =========================
-function quickAsk(q){
-    document.getElementById("question").value = q;
-    sendQuestion();
-}
-
-// =========================
-// 🛠 ADMIN: LOAD USERS
-// =========================
-function loadUsers(){
-    fetch("api/admin/get_users.php")
-    .then(res=>res.json())
-    .then(data=>{
-        document.getElementById("admin-data").innerText =
-        JSON.stringify(data.users, null, 2);
-    });
-}
-
-// =========================
-// 🛠 ADMIN: LOAD CHATS
-// =========================
-function loadChats(){
-    fetch("api/admin/get_chats.php")
-    .then(res=>res.json())
-    .then(data=>{
-        document.getElementById("admin-data").innerText =
-        JSON.stringify(data.chats, null, 2);
-    });
-}
-
-// =========================
-// 📁 CREATE PROJECT
-// =========================
-function createProject(){
-    let name = document.getElementById("project_name").value;
-
-    if(!name || name.length < 3){
-        alert("Project name too short");
-        return;
+        })
+        .catch(() => console.warn("History load failed"));
     }
 
-    fetch("api/create_projects.php",{
-        method:"POST",
-        headers: {"Content-Type":"application/x-www-form-urlencoded"},
-        body: "name="+encodeURIComponent(name)+"&csrf_token="+CSRF_TOKEN
-    })
-    .then(res=>res.json())
-    .then(data=>{
-        if(data.error){
-            alert(data.error);
-        } else {
-            alert("Project created successfully");
-        }
-    });
-}
+    loadHistory();
 
-function loadBanned(){
+    // -----------------------------
+    // 🚪 LOGOUT
+    // -----------------------------
+    window.logout = function () {
+        fetch("api/logout.php", { credentials: "same-origin" })
+        .then(() => window.location.href = "login.php");
+    };
 
-    fetch("api/admin/logs.php")
-    .then(res=>res.json())
-    .then(data=>{
+    // -----------------------------
+    // 🛠 ADMIN FUNCTIONS (SAFE)
+    // -----------------------------
+    const adminDiv = document.getElementById("admin-data");
 
-        let div = document.getElementById("banned");
-        div.innerHTML = "";
+    if (adminDiv) {
 
-        data.banned.forEach(b=>{
-            div.innerHTML += "<p style='color:red'>"+b.ip+" - "+b.reason+"</p>";
-        });
+        window.loadUsers = function () {
+            fetch("api/admin/get_users.php", { credentials: "same-origin" })
+            .then(res => res.json())
+            .then(data => {
+                adminDiv.textContent = JSON.stringify(data.users, null, 2);
+            });
+        };
 
-    });
-}
+        window.loadChats = function () {
+            fetch("api/admin/get_chats.php", { credentials: "same-origin" })
+            .then(res => res.json())
+            .then(data => {
+                adminDiv.textContent = JSON.stringify(data.chats, null, 2);
+            });
+        };
+    }
+
+    // -----------------------------
+    // 📁 PROJECT CREATION
+    // -----------------------------
+    const projectInput = document.getElementById("project_name");
+
+    if (projectInput) {
+
+        window.createProject = function () {
+
+            let name = projectInput.value.trim();
+
+            if (name.length < 3) {
+                alert("Project name too short");
+                return;
+            }
+
+            fetch("api/create_projects.php", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded"
+                },
+                credentials: "same-origin",
+                body: "name=" + encodeURIComponent(name) + "&csrf_token=" + csrfToken
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.success ? "Project created" : data.error);
+            });
+        };
+    }
+
+    // -----------------------------
+    // 🚫 BANNED IP VIEW
+    // -----------------------------
+    const bannedDiv = document.getElementById("banned");
+
+    if (bannedDiv) {
+        window.loadBanned = function () {
+            fetch("api/admin/logs.php", { credentials: "same-origin" })
+            .then(res => res.json())
+            .then(data => {
+                bannedDiv.innerHTML = "";
+
+                data.banned?.forEach(b => {
+                    const p = document.createElement("p");
+                    p.style.color = "red";
+                    p.textContent = `${b.ip} - ${b.reason}`;
+                    bannedDiv.appendChild(p);
+                });
+            });
+        };
+    }
+
+});
