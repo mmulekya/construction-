@@ -1,3 +1,17 @@
+let token = localStorage.getItem("jwt");
+
+fetch("api/ask_ai.php",{
+    method:"POST",
+    headers:{
+        "Content-Type":"application/json",
+        "Authorization": token
+    },
+    body: JSON.stringify({
+        question:q,
+        csrf_token: csrfToken
+    })
+})
+
 // ========================================
 // 🔐 SAFE CHAT MODULE (NO COLLISIONS)
 // ========================================
