@@ -5,8 +5,7 @@ require_once "../../includes/security.php";
 
 header("Content-Type: application/json");
 session_start();
-require_login();
-require_admin();
+$user_id = require_admin_jwt();
 
 $stmt = db_prepare("SELECT id,name,email,role,status,created_at FROM users");
 $stmt->execute();
