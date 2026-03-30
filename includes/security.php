@@ -78,6 +78,24 @@ function check_rate_limit($conn, $key, $limit = 10, $seconds = 60) {
     }
 }
 
+function get_authenticated_user(){
+
+    // 1. Session
+    if(isset($_SESSION['user_id'])){
+        return $_SESSION['user_id'];
+    }
+
+    // 2. JWT
+    $headers = getallheaders();
+    $token = $headers['Authorization'] ?? '';
+
+    if($token){
+        return verify_jwt($token);
+    }
+
+    return false;
+}
+
 // ============================
 // 📝 LOGIN ATTEMPTS + AUTO BAN
 // ============================
