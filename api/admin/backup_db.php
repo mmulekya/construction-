@@ -6,8 +6,7 @@ require_once "../../includes/security.php";
 
 header("Content-Type: application/json");
 
-require_login();
-require_admin();
+$user_id = require_admin_jwt();
 
 // Tables to backup
 $tables = [
