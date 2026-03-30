@@ -5,6 +5,54 @@ header('Content-Type: application/json');
 require_once "../includes/config.php";
 require_once "../includes/database.php";
 require_once "../includes/security.php";
+require_once "../includes/jwt_helper.php";
+
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+check_rate_limit($conn, "otp_" . $ip, 3, 600);
+
+$csrf = $_POST['csrf_token'] ?? '';
+if(!verify_csrf_token($csrf)){
+    exit(json_encode(["error"=>"Invalid CSRF token"]));
+}
+
+$otp = trim($_POST['otp'] ?? '');
+
+if(!isset($_SESSION['otp_user_id'])){
+    exit(json_encode(["error"=>"Session expired"]));
+}
+
+if(time() > $_SESSION['otp_expires']){
+    session_unset();
+    exit(json_encode(["error"=>"OTP expired"]));
+}
+
+if(hash_equals((string)$_SESSION['otp_code'], $otp)){
+
+    $user_id = $_SESSION['otp_user_id'];
+
+    $token = generate_jwt($user_id);
+
+    unset($_SESSION['otp_user_id']);
+    unset($_SESSION['otp_code']);
+    unset($_SESSION['otp_expires']);
+
+    echo json_encode([
+        "success"=>true,
+        "token"=>$token
+    ]);
+} else {
+
+    log_login_attempt($conn, "otp_user_" . $_SESSION['otp_user_id'], 0);
+    auto_ban_ip($conn);
+
+    echo json_encode(["error"=>"Invalid OTP"]);
+}<?php
+session_start();
+header('Content-Type: application/json');
+
+require_once "../includes/config.php";
+require_once "../includes/database.php";
+require_once "../includes/security.php";
 
 // =========================
 // 🔐 RATE LIMIT (PER IP)
