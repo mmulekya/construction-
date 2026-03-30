@@ -5,7 +5,7 @@ require_once "../../includes/security.php";
 
 header("Content-Type: application/json");
 session_start();
-r$user_id = require_admin_jwt();
+$user_id = require_admin_jwt();
 
 $id = intval($_POST['id']);
 
