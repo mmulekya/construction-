@@ -1,157 +1,159 @@
 <?php
 // ==========================================
-
-// 🔒 SECURITY FUNCTIONS
+// 🔒 FINAL SECURITY LAYER (PRODUCTION READY)
 // ==========================================
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/database.php';
 
-function check_banned_ip($conn){
-    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+// ============================
+// 🌐 GET REAL CLIENT IP
+// ============================
+function get_client_ip() {
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+        return trim($ips[0]);
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+}
+
+// ============================
+// 🚫 BLOCK BANNED IP
+// ============================
+function check_banned_ip($conn) {
+    $ip = get_client_ip();
 
     $stmt = $conn->prepare("SELECT id FROM banned_ips WHERE ip=? LIMIT 1");
     $stmt->bind_param("s", $ip);
     $stmt->execute();
 
-    if($stmt->get_result()->num_rows > 0){
+    if ($stmt->get_result()->num_rows > 0) {
         http_response_code(403);
-        exit("🚫 Your IP has been blocked.");
+        exit(json_encode(["error"=>"🚫 Your IP has been blocked"]));
     }
+
+    $stmt->close();
 }
 
-// Run check automatically
+// Run immediately
 check_banned_ip($conn);
 
-// ---------------------------
-// 🔐 CSRF VERIFICATION
-// ---------------------------
+// ============================
+// 🔐 CSRF
+// ============================
 function verify_csrf_token($token) {
     return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
 }
 
-// ---------------------------
-// 🔐 BRUTE-FORCE / LOGIN ATTEMPTS
-// ---------------------------
-function log_login_attempt($user, $success = 0) {
-    global $mysqli;
+// ============================
+// ⚡ RATE LIMIT (SAFE + ATOMIC)
+// ============================
+function check_rate_limit($conn, $key, $limit = 10, $seconds = 60) {
 
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-    $stmt = db_prepare("INSERT INTO login_attempts (email, ip, success, created_at) VALUES (?, ?, ?, NOW())");
-    if ($stmt) {
-        $stmt->bind_param("ssi", $user, $ip, $success);
-        $stmt->execute();
-        $stmt->close();
-    }
-}
+    $ip = get_client_ip();
+    $identifier = $key . "_" . $ip;
 
-function is_rate_limited($user, $max_attempts = 5, $interval_minutes = 5) {
-    global $mysqli;
-
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-    $stmt = db_prepare("
-        SELECT COUNT(*) AS attempts 
-        FROM login_attempts 
-        WHERE email=? AND ip=? AND created_at > (NOW() - INTERVAL ? MINUTE)
-    ");
-    if ($stmt) {
-        $stmt->bind_param("ssi", $user, $ip, $interval_minutes);
-        $stmt->execute();
-        $result = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        return ($result['attempts'] >= $max_attempts);
-    }
-
-    return false;
-}
-
-// ---------------------------
-// 🔐 CLEAN OLD ATTEMPTS
-// ---------------------------
-function clean_old_attempts($days = 30) {
-    global $mysqli;
-    $stmt = db_prepare("DELETE FROM login_attempts WHERE created_at < (NOW() - INTERVAL ? DAY)");
-    if ($stmt) {
-        $stmt->bind_param("i", $days);
-        $stmt->execute();
-        $stmt->close();
-    }
-}
-
-// ---------------------------
-// 🔐 RATE LIMIT (GLOBAL API / Actions)
-// ---------------------------
-function check_rate_limit($key, $limit = 10, $seconds = 60) {
-    global $mysqli;
-
-    $stmt = db_prepare("
-        INSERT INTO rate_limits (`key`, `requests`, `last_request`) 
+    $stmt = $conn->prepare("
+        INSERT INTO rate_limits (`key`, `requests`, `last_request`)
         VALUES (?, 1, NOW())
-        ON DUPLICATE KEY UPDATE 
+        ON DUPLICATE KEY UPDATE
             requests = IF(TIMESTAMPDIFF(SECOND, last_request, NOW()) > ?, 1, requests + 1),
             last_request = NOW()
     ");
-    if ($stmt) {
-        $stmt->bind_param("si", $key, $seconds);
-        $stmt->execute();
-        $stmt->close();
-    }
+    $stmt->bind_param("si", $identifier, $seconds);
+    $stmt->execute();
+    $stmt->close();
 
-    // Check count
-    $stmt = db_prepare("SELECT requests FROM rate_limits WHERE `key`=?");
-    if ($stmt) {
-        $stmt->bind_param("s", $key);
-        $stmt->execute();
-        $result = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+    $stmt = $conn->prepare("SELECT requests FROM rate_limits WHERE `key`=?");
+    $stmt->bind_param("s", $identifier);
+    $stmt->execute();
 
-        if ($result && $result['requests'] > $limit) {
-            http_response_code(429);
-            exit(json_encode(["error" => "Rate limit exceeded"]));
-        }
+    $res = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if ($res && $res['requests'] > $limit) {
+        log_attack($conn, "rate_limit");
+        http_response_code(429);
+        exit(json_encode(["error"=>"Too many requests"]));
     }
 }
 
-function auto_ban_ip($conn){
+// ============================
+// 📝 LOGIN ATTEMPTS + AUTO BAN
+// ============================
+function log_login_attempt($conn, $email, $success = 0) {
 
-    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $ip = get_client_ip();
 
-    // Count failed login attempts in last 15 mins
     $stmt = $conn->prepare("
-        SELECT COUNT(*) as attempts 
+        INSERT INTO login_attempts (email, ip, success, created_at)
+        VALUES (?, ?, ?, NOW())
+    ");
+    $stmt->bind_param("ssi", $email, $ip, $success);
+    $stmt->execute();
+    $stmt->close();
+
+    // Trigger auto-ban
+    if (!$success) {
+        auto_ban_ip($conn, $ip);
+    }
+}
+
+// ============================
+// 🔥 AUTO BAN SYSTEM
+// ============================
+function auto_ban_ip($conn, $ip) {
+
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as failed
         FROM login_attempts
         WHERE ip=? AND success=0
         AND created_at > NOW() - INTERVAL 15 MINUTE
     ");
-
     $stmt->bind_param("s", $ip);
     $stmt->execute();
 
-    $result = $stmt->get_result()->fetch_assoc();
+    $failed = $stmt->get_result()->fetch_assoc()['failed'];
+    $stmt->close();
 
-    if($result['attempts'] >= 10){
+    if ($failed >= 10) {
 
-        // Insert into banned_ips
         $stmt = $conn->prepare("
             INSERT IGNORE INTO banned_ips (ip, reason, banned_at)
-            VALUES (?, 'Too many failed logins', NOW())
+            VALUES (?, 'Brute-force attack', NOW())
         ");
-
         $stmt->bind_param("s", $ip);
         $stmt->execute();
+        $stmt->close();
+
+        log_attack($conn, "ip_banned");
     }
 }
 
+// ============================
+// 🚨 ATTACK LOGGING
+// ============================
 function log_attack($conn, $type){
 
-    $ip = $_SERVER['REMOTE_ADDR'];
+    $ip = get_client_ip();
 
     $stmt = $conn->prepare("
         INSERT INTO logs (action, ip_address, created_at)
         VALUES (?, ?, NOW())
     ");
-
     $stmt->bind_param("ss", $type, $ip);
     $stmt->execute();
+    $stmt->close();
 }
+
+// ============================
+// 🧹 CLEANUP (AUTO)
+// ============================
+function clean_security_logs($conn){
+
+    $conn->query("DELETE FROM login_attempts WHERE created_at < NOW() - INTERVAL 30 DAY");
+    $conn->query("DELETE FROM rate_limits WHERE last_request < NOW() - INTERVAL 1 HOUR");
+}
+
+// Optional auto cleanup
+clean_security_logs($conn);
