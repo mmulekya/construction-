@@ -11,8 +11,7 @@ if(session_status() === PHP_SESSION_NONE){
 }
 
 // 🔐 SECURITY
-require_login();
-require_admin();
+$user_id = require_admin_jwt();
 
 // 🔐 Rate limit admin API
 check_rate_limit($conn, "admin_logs_" . ($_SESSION['user_id'] ?? 0), 5, 60);
