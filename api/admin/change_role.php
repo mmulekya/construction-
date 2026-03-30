@@ -5,8 +5,7 @@ require_once "../../includes/security.php";
 
 header("Content-Type: application/json");
 session_start();
-require_login();
-require_admin();
+$user_id = require_admin_jwt();
 
 $csrf = $_POST['csrf_token'] ?? '';
 if(!verify_csrf_token($csrf)){
