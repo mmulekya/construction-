@@ -2,25 +2,39 @@
 require_once "../includes/config.php";
 require_once "../includes/database.php";
 require_once "../includes/security.php";
+require_once "../includes/rate_limit.php";
 
 header("Content-Type: application/json");
-session_start();
 
-$user_id = $_SESSION['user_id'] ?? null;
-if(!$user_id) exit(json_encode(["error"=>"Unauthorized"]));
+if(session_status() === PHP_SESSION_NONE){
+    session_start();
+}
 
-// CSRF
+$user_id = get_authenticated_user();
+if(!$user_id){
+    exit(json_encode(["error"=>"Unauthorized"]));
+}
+
+check_rate_limit($conn, "create_project_" . $user_id, 5, 60);
+
 $csrf = $_POST['csrf_token'] ?? '';
-if(!verify_csrf_token($csrf)) exit(json_encode(["error"=>"Invalid CSRF token"]));
+if(!verify_csrf_token($csrf)){
+    exit(json_encode(["error"=>"Invalid CSRF token"]));
+}
 
-$project_name = trim($_POST['name'] ?? '');
-if(!$project_name) exit(json_encode(["error"=>"Project name required"]));
+$name = trim($_POST['name'] ?? '');
 
-// Insert project
-$stmt = db_prepare("INSERT INTO projects (name, user_id, created_at) VALUES (?,?,NOW())");
-$stmt->bind_param("si", $project_name, $user_id);
+if(strlen($name) < 3){
+    exit(json_encode(["error"=>"Project name too short"]));
+}
+
+$stmt = db_prepare("
+INSERT INTO projects (user_id, name, created_at)
+VALUES (?, ?, NOW())
+");
+
+$stmt->bind_param("is", $user_id, $name);
 $stmt->execute();
-$project_id = $stmt->insert_id;
 $stmt->close();
 
-echo json_encode(["success"=>true,"project_id"=>$project_id]);
+echo json_encode(["success"=>true]);
