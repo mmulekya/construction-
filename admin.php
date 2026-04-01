@@ -11,6 +11,7 @@ if(!is_logged_in() || !is_admin()){
 <html>
 <head>
     <title>Admin Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
 
