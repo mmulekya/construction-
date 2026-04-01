@@ -125,6 +125,10 @@
     <div id="otpLoading" style="display:none;margin:10px auto;border:4px solid #f3f3f3;border-top:4px solid #007bff;border-radius:50%;width:30px;height:30px;animation:spin 1s linear infinite;"></div>
 </div>
 
+<p style="font-size:12px; color:gray;">
+    ⚠️ First time here? Create an account to continue.
+</p>
+
 <script>
 let currentUserId = null;
 let csrfToken = "";
