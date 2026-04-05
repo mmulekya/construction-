@@ -1,107 +1,106 @@
 <?php require_once "includes/security.php"; ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Login</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f5f7fa;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-        .login-container {
-            width: 90%;
-            max-width: 400px;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0px 5px 15px rgba(0,0,0,0.1);
-            text-align: center;
-        }
+<title>Login - BuildSmart AI</title>
 
-        h2 { margin-bottom: 20px; }
+<style>
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f5f7fa;
+}
 
-        input {
-            width: 100%;
-            padding: 12px;
-            margin-bottom: 10px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            font-size: 16px;
-        }
+/* Header */
+header {
+    background: #007bff;
+    color: white;
+    padding: 15px;
+    text-align: center;
+}
 
-        button {
-            width: 100%;
-            padding: 12px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-        }
+header a {
+    color: white;
+    margin: 0 10px;
+    text-decoration: none;
+}
 
-        button:hover { background: #0056b3; }
+/* Container */
+.login-container {
+    width: 90%;
+    max-width: 400px;
+    margin: 50px auto;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0px 5px 15px rgba(0,0,0,0.1);
+    text-align: center;
+}
 
-        /* OTP popup */
-        #otpBox {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 85%;
-            max-width: 300px;
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0px 5px 15px rgba(0,0,0,0.2);
-            display: none;
-            text-align: center;
-        }
+h2 { margin-bottom: 10px; }
 
-        #otpBox input { margin-top: 10px; }
+p.desc {
+    font-size: 14px;
+    color: #555;
+    margin-bottom: 20px;
+}
 
-        /* Loading spinner */
-        #loading {
-            display: none;
-            margin: 10px auto;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #007bff;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-        }
+input {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+}
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+button {
+    width: 100%;
+    padding: 12px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
 
-        /* Inline message */
-        #message {
-            margin: 10px 0;
-            color: red;
-            font-weight: bold;
-        }
+button:hover { background: #0056b3; }
 
-        @media (max-width: 480px) {
-            .login-container { padding: 15px; }
-            input, button { font-size: 14px; }
-        }
-    </style>
+#message {
+    margin-top: 10px;
+    color: red;
+}
+
+/* OTP */
+#otpBox {
+    display: none;
+    margin-top: 20px;
+}
+</style>
+
 </head>
 <body>
 
+<header>
+    <h1>BuildSmart AI</h1>
+    <div>
+        <a href="index.php">Home</a>
+        <a href="about.php">About</a>
+        <a href="contact.php">Contact</a>
+    </div>
+</header>
+
 <div class="login-container">
+
     <h2>🔐 Login</h2>
+
+    <p class="desc">
+        Secure login to access your AI-powered construction assistant.
+    </p>
+
     <form id="loginForm">
         <input type="email" name="email" placeholder="Email" required>
         <input type="password" name="password" placeholder="Password" required>
@@ -109,28 +108,23 @@
         <button type="submit">Login</button>
     </form>
 
-    <!-- Inline message -->
+    <p style="margin-top:10px;">
+        New user? <a href="register.php">Create an account</a>
+    </p>
+
     <div id="message"></div>
 
-    <!-- Loading spinner -->
-    <div id="loading"></div>
-</div>
+    <!-- OTP -->
+    <div id="otpBox">
+        <h3>Enter OTP</h3>
+        <input type="text" id="otp" placeholder="Enter OTP">
+        <button onclick="verifyOTP()">Verify</button>
+        <div id="otpMessage"></div>
+    </div>
 
-<!-- OTP POPUP -->
-<div id="otpBox">
-    <h3>Enter OTP</h3>
-    <input type="text" id="otp" placeholder="Enter OTP">
-    <button onclick="verifyOTP()">Verify</button>
-    <div id="otpMessage" style="margin-top:10px;color:red;font-weight:bold;"></div>
-    <div id="otpLoading" style="display:none;margin:10px auto;border:4px solid #f3f3f3;border-top:4px solid #007bff;border-radius:50%;width:30px;height:30px;animation:spin 1s linear infinite;"></div>
 </div>
-
-<p style="font-size:12px; color:gray;">
-    ⚠️ First time here? Create an account to continue.
-</p>
 
 <script>
-let currentUserId = null;
 let csrfToken = "";
 
 // Load CSRF
@@ -141,15 +135,9 @@ fetch('includes/get_csrf.php')
     csrfToken = data.token;
 });
 
-// Helper functions
-function showMessage(text, target='message'){ document.getElementById(target).innerText = text; }
-function showLoading(show=true, target='loading'){ document.getElementById(target).style.display = show ? 'block' : 'none'; }
-
 // LOGIN
 document.getElementById('loginForm').onsubmit = function(e){
     e.preventDefault();
-    showMessage('');
-    showLoading(true);
 
     let formData = new FormData(this);
 
@@ -159,47 +147,35 @@ document.getElementById('loginForm').onsubmit = function(e){
     })
     .then(res=>res.json())
     .then(data=>{
-        showLoading(false);
-
         if(data.otp_required){
-            currentUserId = data.user_id;
             document.getElementById("otpBox").style.display = "block";
-            showMessage("OTP sent to email", "otpMessage");
+            document.getElementById("otpMessage").innerText = "OTP sent to email";
         } else {
-            showMessage(data.error);
+            document.getElementById("message").innerText = data.error;
         }
     })
     .catch(()=>{
-        showLoading(false);
-        showMessage("Network error. Try again.");
+        document.getElementById("message").innerText = "Server error";
     });
 };
 
 // VERIFY OTP
 function verifyOTP(){
     let otp = document.getElementById("otp").value;
-    showMessage('');
-    showLoading(true,'otpLoading');
 
     fetch('api/verify_otp.php',{
         method:'POST',
         headers: {"Content-Type":"application/x-www-form-urlencoded"},
-        body: "user_id="+currentUserId+"&otp="+encodeURIComponent(otp)+"&csrf_token="+csrfToken
+        body: "otp="+encodeURIComponent(otp)+"&csrf_token="+csrfToken
     })
     .then(res=>res.json())
     .then(data=>{
-        showLoading(false,'otpLoading');
-
         if(data.success){
             localStorage.setItem("jwt", data.token);
             window.location.href = "index.php";
         } else {
-            showMessage(data.error,'otpMessage');
+            document.getElementById("otpMessage").innerText = data.error;
         }
-    })
-    .catch(()=>{
-        showLoading(false,'otpLoading');
-        showMessage("Network error.",'otpMessage');
     });
 }
 </script>
