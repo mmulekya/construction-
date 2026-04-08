@@ -1,31 +1,37 @@
+# =========================
+# 🔐 Disable directory listing
+# =========================
 Options -Indexes
 
 # =========================
-# 🔒 Protect sensitive files
+# 🔐 Protect sensitive files
 # =========================
 <FilesMatch "\.(env|ini|log|sh|sql)$">
     Require all denied
 </FilesMatch>
 
 # =========================
-# 🔒 Block hidden files (.env, .git, etc.)
+# 🔐 Block hidden files (.env, .git)
 # =========================
 <FilesMatch "^\.">
     Require all denied
 </FilesMatch>
 
 # =========================
-# 🔒 Block includes folder access
+# 🔐 Block includes folder access
 # =========================
 RewriteEngine On
-
 RewriteRule ^includes/ - [F,L]
+
+# =========================
+# 🔐 Allow API (IMPORTANT)
+# =========================
 RewriteRule ^api/ - [L]
 
 # =========================
-# 🔒 Block uploads direct access (optional)
+# 🔐 Block uploads execution
 # =========================
-RewriteRule ^uploads/.*$ - [F,L]
+RewriteRule ^uploads/.*\.php$ - [F,L]
 
 # =========================
 # 🛡️ Security Headers
@@ -36,15 +42,3 @@ RewriteRule ^uploads/.*$ - [F,L]
     Header always set X-XSS-Protection "1; mode=block"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
-
-# =========================
-# 🔒 Disable PHP execution ONLY in uploads
-# =========================
-<Directory "uploads">
-    <IfModule mod_php.c>
-        php_flag engine off
-    </IfModule>
-</Directory>
-
-# OR, a simpler method for shared hosting like InfinityFree:
-RewriteRule ^uploads/.*\.php$ - [F,L]
