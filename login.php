@@ -8,6 +8,10 @@
 
 <title>Login - BuildSmart AI</title>
 
+<!-- SEO + Trust -->
+<meta name="description" content="Secure login for BuildSmart AI - AI-powered construction assistant platform.">
+<meta name="robots" content="index, follow">
+
 <style>
 body {
     margin: 0;
@@ -46,7 +50,14 @@ h2 { margin-bottom: 10px; }
 p.desc {
     font-size: 14px;
     color: #555;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
+}
+
+/* TRUST MESSAGE */
+p.trust {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 15px;
 }
 
 input {
@@ -101,6 +112,11 @@ button:hover { background: #0056b3; }
         Secure login to access your AI-powered construction assistant.
     </p>
 
+    <!-- TRUST MESSAGE (IMPORTANT) -->
+    <p class="trust">
+        This is a legitimate platform. We do NOT request banking or financial information.
+    </p>
+
     <form id="loginForm">
         <input type="email" name="email" placeholder="Email" required>
         <input type="password" name="password" placeholder="Password" required>
@@ -123,6 +139,17 @@ button:hover { background: #0056b3; }
     </div>
 
 </div>
+
+<!-- FOOTER (VERY IMPORTANT) -->
+<footer style="text-align:center; padding:20px; font-size:13px; color:#555;">
+    <p>© 2026 BuildSmart AI</p>
+    <p>
+        <a href="about.php">About</a> |
+        <a href="contact.php">Contact</a> |
+        <a href="privacy.php">Privacy</a> |
+        <a href="terms.php">Terms</a>
+    </p>
+</footer>
 
 <script>
 let csrfToken = "";
